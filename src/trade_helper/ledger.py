@@ -226,6 +226,17 @@ class Ledger:
                     reasons_json TEXT NOT NULL,
                     payload_json TEXT NOT NULL
                 );
+
+                CREATE TABLE IF NOT EXISTS decision_runs (
+                    decision_id TEXT PRIMARY KEY,
+                    generated_at TEXT NOT NULL,
+                    config_version TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    reasons_json TEXT NOT NULL,
+                    input_json TEXT NOT NULL,
+                    output_json TEXT NOT NULL,
+                    FOREIGN KEY(config_version) REFERENCES config_versions(config_version)
+                );
                     """
                 )
 
@@ -472,6 +483,7 @@ class Ledger:
             "strategy_runtime",
             "tactical_level_state",
             "market_snapshots",
+            "decision_runs",
         }
         if table not in allowed:
             raise ValueError("unsupported table")
