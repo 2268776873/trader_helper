@@ -27,6 +27,19 @@ Trade Helper 是 Windows 本地低频 ETF 仓位管理助手。它只生成可�
 5. 账户必须满足：现金加三项持仓市值等于总资产。否则进入待对账状态。
 6. 导入显式 A 股交易日历，不允许软件用周一至周五猜测开市。
 
+可选：注册每日14:00 Windows任务。注册脚本只负责工作日唤醒，程序仍以显式
+交易日历判断是否开市：
+
+```powershell
+.\scripts\register_daily_task.ps1 -Python C:\path\to\python.exe
+```
+
+移除任务：
+
+```powershell
+.\scripts\unregister_daily_task.ps1
+```
+
 ## 3. 每日流程
 
 ### 14:00 前
