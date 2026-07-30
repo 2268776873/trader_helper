@@ -5,7 +5,7 @@ from tempfile import TemporaryDirectory
 from unittest import TestCase
 
 from trade_helper.config import load_strategy_config
-from trade_helper.ledger import AccountSnapshot, Ledger, PositionSnapshot
+from trade_helper.ledger import AccountSnapshot, CashFlow, Ledger, PositionSnapshot
 from trade_helper.execution import Advice, ExecutionLedger
 from trade_helper.models import Readiness
 from trade_helper.state_store import StrategyStateStore
@@ -48,8 +48,15 @@ class DashboardRepositoryTests(TestCase):
                     Decimal("2.000"), "test",
                 )
             )
+            ledger.add_cash_flow(
+                CashFlow(
+                    "FLOW-1", datetime(2026, 7, 29, tzinfo=timezone.utc),
+                    "DEPOSIT", Decimal("16000"),
+                )
+            )
 
             model = DashboardRepository(database).load()
+            history = DashboardRepository(database).load_history()
 
         self.assertTrue(model.has_account)
         self.assertEqual(Decimal("500000"), model.total_assets_cny)
@@ -58,3 +65,5 @@ class DashboardRepositoryTests(TestCase):
         self.assertEqual(Decimal("350000"), sum(value for _, value in model.cash_pools))
         self.assertEqual("ADV-1", model.open_advices[0].advice_id)
         self.assertEqual(0, model.open_advices[0].filled_quantity)
+        self.assertEqual("资金", history[0].category)
+        self.assertIn("16,000.00", history[0].summary)

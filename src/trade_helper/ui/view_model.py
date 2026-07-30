@@ -39,6 +39,15 @@ class AdviceDashboard:
 
 
 @dataclass(frozen=True)
+class HistoryRecord:
+    occurred_at: datetime
+    category: str
+    reference_id: str
+    status: str
+    summary: str
+
+
+@dataclass(frozen=True)
 class DashboardViewModel:
     has_account: bool
     total_assets_cny: Decimal
@@ -229,3 +238,67 @@ class DashboardRepository:
                 for row in advice_rows
             ),
         )
+
+    def load_history(self, limit: int = 200) -> tuple[HistoryRecord, ...]:
+        if not self.database.exists():
+            return ()
+        ledger = Ledger(self.database)
+        ledger.initialize()
+        with closing(ledger.connect()) as connection:
+            decisions = connection.execute(
+                """
+                SELECT generated_at, decision_id, status, reasons_json
+                FROM decision_runs ORDER BY generated_at DESC LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+            trades = connection.execute(
+                """
+                SELECT trade_time, trade_id, status, side, etf_code, quantity,
+                       price_milli
+                FROM trades ORDER BY trade_time DESC LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+            flows = connection.execute(
+                """
+                SELECT flow_time, flow_id, flow_type, amount_fen
+                FROM cash_flows ORDER BY flow_time DESC LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+        records = [
+            HistoryRecord(
+                datetime.fromisoformat(row["generated_at"]),
+                "决策",
+                row["decision_id"],
+                row["status"],
+                "；".join(json.loads(row["reasons_json"])) or "规则计算完成",
+            )
+            for row in decisions
+        ]
+        records.extend(
+            HistoryRecord(
+                datetime.fromisoformat(row["trade_time"]),
+                "成交",
+                row["trade_id"],
+                row["status"],
+                (
+                    f"{row['side']} {row['etf_code']} {row['quantity']:,}份 "
+                    f"@ {Decimal(row['price_milli']) / 1000:.3f}"
+                ),
+            )
+            for row in trades
+        )
+        records.extend(
+            HistoryRecord(
+                datetime.fromisoformat(row["flow_time"]),
+                "资金",
+                row["flow_id"],
+                row["flow_type"],
+                f"{Decimal(row['amount_fen']) / 100:+,.2f} 元",
+            )
+            for row in flows
+        )
+        records.sort(key=lambda item: item.occurred_at, reverse=True)
+        return tuple(records[:limit])

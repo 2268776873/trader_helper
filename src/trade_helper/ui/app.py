@@ -111,6 +111,10 @@ class TradeHelperApp(tk.Tk):
                 fg=COLORS["text"] if active else COLORS["muted"],
                 bg=item["bg"],
             ).pack(side="left", padx=4)
+            if label == "历史审计":
+                for widget in (item, *item.winfo_children()):
+                    widget.configure(cursor="hand2")
+                    widget.bind("<Button-1>", lambda _: self._open_history())
         footer = tk.Frame(sidebar, bg=COLORS["sidebar"])
         footer.pack(side="bottom", fill="x", padx=22, pady=24)
         tk.Label(
@@ -453,6 +457,56 @@ class TradeHelperApp(tk.Tk):
             return
         messagebox.showinfo("成交已记录", f"当前状态：{status.value}", parent=self)
         self._reload_dashboard()
+
+    def _open_history(self) -> None:
+        window = tk.Toplevel(self)
+        window.title("Trade Helper · 历史审计")
+        window.geometry("1100x680")
+        window.configure(bg=COLORS["window"])
+        tk.Label(
+            window, text="历史审计", font=FONTS["hero"],
+            fg=COLORS["text"], bg=COLORS["window"],
+        ).pack(anchor="w", padx=28, pady=(24, 4))
+        tk.Label(
+            window, text="决策、实际成交与资金流水按时间统一展示",
+            font=FONTS["small"], fg=COLORS["muted"], bg=COLORS["window"],
+        ).pack(anchor="w", padx=28, pady=(0, 18))
+        style = ttk.Style(window)
+        style.configure(
+            "Audit.Treeview",
+            background=COLORS["surface"], fieldbackground=COLORS["surface"],
+            foreground=COLORS["text"], rowheight=34, borderwidth=0,
+            font=FONTS["small"],
+        )
+        style.configure(
+            "Audit.Treeview.Heading",
+            background=COLORS["surface_hover"], foreground=COLORS["cyan"],
+            relief="flat", font=FONTS["small"],
+        )
+        frame = tk.Frame(window, bg=COLORS["window"])
+        frame.pack(fill="both", expand=True, padx=28, pady=(0, 28))
+        columns = ("time", "category", "reference", "status", "summary")
+        tree = ttk.Treeview(
+            frame, columns=columns, show="headings", style="Audit.Treeview"
+        )
+        widths = (170, 80, 190, 150, 430)
+        labels = ("时间", "类别", "记录 ID", "状态", "摘要")
+        for column, width, label in zip(columns, widths, labels):
+            tree.heading(column, text=label)
+            tree.column(column, width=width, minwidth=60)
+        scrollbar = ttk.Scrollbar(frame, orient="vertical", command=tree.yview)
+        tree.configure(yscrollcommand=scrollbar.set)
+        tree.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        for record in DashboardRepository(self.database).load_history():
+            tree.insert(
+                "", "end",
+                values=(
+                    record.occurred_at.strftime("%Y-%m-%d %H:%M:%S"),
+                    record.category, record.reference_id, record.status,
+                    record.summary,
+                ),
+            )
 
 
 def main() -> int:
