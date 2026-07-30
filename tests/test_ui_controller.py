@@ -7,7 +7,7 @@ from unittest import TestCase
 
 from openpyxl import Workbook
 
-from trade_helper.ledger import Ledger
+from trade_helper.ledger import CashFlow, Ledger
 from trade_helper.execution import Advice, AdviceStatus, ExecutionLedger
 from trade_helper.models import Quote
 from trade_helper.ui.controller import (
@@ -153,3 +153,35 @@ class DesktopControllerTests(TestCase):
             self.assertTrue(summary.usable)
             self.assertFalse(summary.degraded)
             self.assertEqual(3, len(summary.snapshots))
+
+    def test_client_restore_creates_automatic_safety_backup(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            active = root / "active.db"
+            source = root / "source.db"
+            active_ledger = Ledger(active)
+            active_ledger.initialize()
+            active_ledger.add_cash_flow(
+                CashFlow(
+                    "ACTIVE-FLOW", datetime.now(timezone.utc), "DEPOSIT",
+                    Decimal("100"),
+                )
+            )
+            source_ledger = Ledger(source)
+            source_ledger.initialize()
+            source_ledger.add_cash_flow(
+                CashFlow(
+                    "SOURCE-FLOW", datetime.now(timezone.utc), "DEPOSIT",
+                    Decimal("200"),
+                )
+            )
+            source_backup = root / "source.thbackup"
+            DesktopController(source).create_database_backup(source_backup)
+
+            result = DesktopController(active).restore_database_backup(
+                source_backup
+            )
+
+            self.assertIsNotNone(result.safety_backup)
+            self.assertTrue(result.safety_backup.is_file())
+            self.assertEqual(1, Ledger(active).count("cash_flows"))

@@ -95,6 +95,7 @@ class TradeHelperApp(tk.Tk):
                 ("↻", "执行反馈"),
                 ("◫", "策略状态"),
                 ("◷", "历史审计"),
+                ("▣", "备份恢复"),
             )
         ):
             active = index == 0
@@ -127,6 +128,10 @@ class TradeHelperApp(tk.Tk):
                 for widget in (item, *item.winfo_children()):
                     widget.configure(cursor="hand2")
                     widget.bind("<Button-1>", lambda _: self._open_strategy_state())
+            if label == "备份恢复":
+                for widget in (item, *item.winfo_children()):
+                    widget.configure(cursor="hand2")
+                    widget.bind("<Button-1>", lambda _: self._open_backup_center())
         footer = tk.Frame(sidebar, bg=COLORS["sidebar"])
         footer.pack(side="bottom", fill="x", padx=22, pady=24)
         tk.Label(
@@ -765,6 +770,94 @@ class TradeHelperApp(tk.Tk):
                 return candidate
         raise FileNotFoundError(
             "找不到 personal_v1.json；可通过 TRADE_HELPER_CONFIG 指定路径"
+        )
+
+    def _open_backup_center(self) -> None:
+        window = tk.Toplevel(self)
+        window.title("Trade Helper · 备份与恢复")
+        window.geometry("640x360")
+        window.configure(bg=COLORS["window"])
+        tk.Label(
+            window, text="备份与恢复", font=FONTS["hero"],
+            fg=COLORS["text"], bg=COLORS["window"],
+        ).pack(anchor="w", padx=28, pady=(26, 6))
+        tk.Label(
+            window,
+            text="备份包含本地账户、建议、成交和策略状态。恢复前会自动保存当前数据库。",
+            wraplength=570, justify="left", font=FONTS["body"],
+            fg=COLORS["muted"], bg=COLORS["window"],
+        ).pack(anchor="w", padx=28, pady=(0, 24))
+        card = self._card(window)
+        card.pack(fill="both", expand=True, padx=28, pady=(0, 28))
+        tk.Button(
+            card, text="创建校验备份",
+            command=lambda: self._create_backup_from_client(window),
+            bg=COLORS["cyan"], fg=COLORS["window"], relief="flat",
+            padx=20, pady=10, cursor="hand2", font=FONTS["body"],
+        ).pack(anchor="w", padx=22, pady=(24, 12))
+        tk.Button(
+            card, text="从备份恢复",
+            command=lambda: self._restore_backup_from_client(window),
+            bg=COLORS["surface_hover"], fg=COLORS["text"], relief="flat",
+            padx=20, pady=10, cursor="hand2", font=FONTS["body"],
+        ).pack(anchor="w", padx=22)
+        tk.Label(
+            card,
+            text="恢复操作会校验格式、大小、SHA-256 和 SQLite 完整性。",
+            font=FONTS["small"], fg=COLORS["muted"], bg=COLORS["surface"],
+        ).pack(anchor="w", padx=22, pady=(16, 20))
+
+    def _create_backup_from_client(self, window: tk.Toplevel) -> None:
+        destination = filedialog.asksaveasfilename(
+            parent=window,
+            title="保存 Trade Helper 备份",
+            defaultextension=".thbackup",
+            filetypes=(("Trade Helper 备份", "*.thbackup"),),
+        )
+        if not destination:
+            return
+        try:
+            manifest = self.controller.create_database_backup(destination)
+        except Exception as error:
+            messagebox.showerror("备份失败", str(error), parent=window)
+            return
+        messagebox.showinfo(
+            "备份完成",
+            f"文件：{destination}\n"
+            f"大小：{manifest.database_size} 字节\n"
+            f"SHA-256：{manifest.database_sha256}",
+            parent=window,
+        )
+
+    def _restore_backup_from_client(self, window: tk.Toplevel) -> None:
+        source = filedialog.askopenfilename(
+            parent=window,
+            title="选择 Trade Helper 备份",
+            filetypes=(("Trade Helper 备份", "*.thbackup"),),
+        )
+        if not source:
+            return
+        if not messagebox.askyesno(
+            "确认恢复",
+            "将用所选备份替换当前本地数据库。\n"
+            "系统会先自动备份当前数据库，是否继续？",
+            parent=window,
+        ):
+            return
+        try:
+            result = self.controller.restore_database_backup(source)
+        except Exception as error:
+            messagebox.showerror("恢复失败", str(error), parent=window)
+            return
+        self._reload_dashboard()
+        safety = (
+            str(result.safety_backup)
+            if result.safety_backup is not None else "当前数据库原先不存在"
+        )
+        messagebox.showinfo(
+            "恢复完成",
+            f"数据库已通过完整性校验并恢复。\n恢复前安全备份：{safety}",
+            parent=window,
         )
 
     def _open_strategy_state(self) -> None:

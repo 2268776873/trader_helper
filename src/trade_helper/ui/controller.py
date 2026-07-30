@@ -6,6 +6,7 @@ from decimal import Decimal
 from pathlib import Path
 from uuid import uuid4
 
+from trade_helper.backup import BackupManifest, create_backup, restore_backup
 from trade_helper.execution import (
     AdviceStatus,
     ExecutionLedger,
@@ -62,6 +63,12 @@ class MarketCollectionSummary:
     degraded: bool
     source_errors: tuple[str, ...]
     snapshots: tuple[tuple[str, str, tuple[str, ...]], ...]
+
+
+@dataclass(frozen=True)
+class RestoreSummary:
+    manifest: BackupManifest
+    safety_backup: Path | None
 
 
 class DesktopController:
@@ -215,3 +222,17 @@ class DesktopController:
                 for snapshot in result.snapshots
             ),
         )
+
+    def create_database_backup(self, destination: str | Path) -> BackupManifest:
+        return create_backup(self.database, destination)
+
+    def restore_database_backup(self, source: str | Path) -> RestoreSummary:
+        safety_backup = None
+        if self.database.exists():
+            stamp = datetime.now().astimezone().strftime("%Y%m%d-%H%M%S-%f")
+            safety_backup = self.database.with_name(
+                f"{self.database.stem}.pre-restore-{stamp}.thbackup"
+            )
+            create_backup(self.database, safety_backup)
+        manifest = restore_backup(source, self.database)
+        return RestoreSummary(manifest, safety_backup)
