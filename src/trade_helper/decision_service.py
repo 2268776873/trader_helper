@@ -18,7 +18,12 @@ from trade_helper.market_data import MarketSnapshot
 from trade_helper.models import Readiness
 from trade_helper.reference_series import ReferenceSeriesStore
 from trade_helper.state_store import StrategyStateStore
-from trade_helper.strategy import BaseCandidate, BasePlanInput, TacticalInput
+from trade_helper.strategy import (
+    BaseCandidate,
+    BasePlanInput,
+    RebalanceInput,
+    TacticalInput,
+)
 
 
 class DecisionInputError(RuntimeError):
@@ -105,6 +110,20 @@ class DailyDecisionService:
                 WHERE status IN ('READY', 'NO_ACTION')
                 """
             ).fetchall()
+            rebalance_rows = connection.execute(
+                """
+                SELECT asset_id, days_above_max, last_evaluated_date
+                FROM rebalance_state
+                """
+            ).fetchall()
+            previous_open_row = connection.execute(
+                """
+                SELECT MAX(trading_date) AS trading_date
+                FROM trading_calendar
+                WHERE is_open = 1 AND trading_date < ?
+                """,
+                (now.date().isoformat(),),
+            ).fetchone()
         total = Decimal(snapshot["total_assets_fen"]) / 100
         snapshot_at = datetime.fromisoformat(snapshot["as_of"])
         cash = (
@@ -152,6 +171,14 @@ class DailyDecisionService:
         markets: list[MarketSnapshot] = []
         tactical: list[TacticalInput] = []
         base_candidates: list[BaseCandidate] = []
+        rebalance_inputs: list[RebalanceInput] = []
+        rebalance_by_asset = {
+            str(row["asset_id"]): row for row in rebalance_rows
+        }
+        previous_open_date = (
+            previous_open_row["trading_date"]
+            if previous_open_row is not None else None
+        )
         level_states = {
             item.asset_id: [] for item in runtime.tactical_levels
         }
@@ -162,6 +189,13 @@ class DailyDecisionService:
             "NASDAQ": runtime.cash_pools.tactical_nd_cny,
             "DIVIDEND": runtime.cash_pools.tactical_dv_cny,
         }
+        maximum_age = timedelta(
+            minutes=float(
+                self.config.raw["data_quality"][
+                    "maximum_estimate_age_minutes"
+                ]
+            )
+        )
         for asset in self.config.assets:
             row = market_by_symbol.get(asset.etf_code)
             reasons: list[str] = []
@@ -175,13 +209,6 @@ class DailyDecisionService:
                 generated_at = datetime.fromisoformat(row["observed_at"])
                 payload = json.loads(row["payload_json"])
                 reasons.extend(json.loads(row["reasons_json"]))
-                maximum_age = timedelta(
-                    minutes=float(
-                        self.config.raw["data_quality"][
-                            "maximum_estimate_age_minutes"
-                        ]
-                    )
-                )
                 if (
                     generated_at > now + timedelta(seconds=30)
                     or now - generated_at > maximum_age
@@ -200,6 +227,16 @@ class DailyDecisionService:
                 if item.get("kind") == "VALUATION" and item.get("value") is not None
             ]
             ask_raw = payload.get("selected_ask")
+            bid_values = [
+                Decimal(str(item["bid1"]))
+                for item in payload.get("quotes", [])
+                if item.get("bid1") is not None
+                and Decimal(str(item["bid1"])) > 0
+                and datetime.fromisoformat(item["observed_at"])
+                <= now + timedelta(seconds=30)
+                and now - datetime.fromisoformat(item["observed_at"])
+                <= maximum_age
+            ]
             data_valid = (
                 readiness == Readiness.READY
                 and ask_raw is not None
@@ -235,6 +272,48 @@ class DailyDecisionService:
                     ask, nav_1, nav_2, data_valid,
                 )
             )
+            position_value = values.get(asset.asset_id, Decimal("0"))
+            current_weight = (
+                position_value / total if total else Decimal("0")
+            )
+            prior_rebalance = rebalance_by_asset.get(asset.asset_id)
+            if current_weight > asset.max_weight:
+                if (
+                    prior_rebalance is not None
+                    and prior_rebalance["last_evaluated_date"]
+                    == now.date().isoformat()
+                ):
+                    days_above_max = int(
+                        prior_rebalance["days_above_max"]
+                    )
+                elif (
+                    prior_rebalance is not None
+                    and prior_rebalance["last_evaluated_date"]
+                    == previous_open_date
+                ):
+                    days_above_max = int(
+                        prior_rebalance["days_above_max"]
+                    ) + 1
+                else:
+                    days_above_max = 1
+            else:
+                days_above_max = 0
+            conservative_valuation = min(valuations) if valuations else None
+            premium = (
+                ask / conservative_valuation - 1
+                if conservative_valuation else None
+            )
+            rebalance_inputs.append(
+                RebalanceInput(
+                    asset.asset_id,
+                    total,
+                    position_value,
+                    min(bid_values) if bid_values else ask,
+                    days_above_max,
+                    premium,
+                    False,
+                )
+            )
         return DecisionRequest(
             decision_id, now, reconciled, a_share_trading_day_number,
             tuple(markets), tuple(tactical),
@@ -242,7 +321,8 @@ class DailyDecisionService:
                 total, cash, runtime.base_budget.available_cny, today_buy,
                 tuple(base_candidates),
             ),
-            not any(
+            rebalance_inputs=tuple(rebalance_inputs),
+            advance_cycle=not any(
                 datetime.fromisoformat(row["generated_at"]).date() == now.date()
                 for row in successful_decisions
             ),

@@ -128,8 +128,15 @@ class LedgerTests(TestCase):
             row[1]
             for row in connection.execute("PRAGMA table_info(advice)").fetchall()
         }
+        tables = {
+            row[0]
+            for row in connection.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table'"
+            ).fetchall()
+        }
         connection.close()
         self.assertIn("sort_order", columns)
-        self.assertEqual("6", version)
+        self.assertEqual("7", version)
         self.assertIn("level_id", advice_columns)
         self.assertIn("funding_pool", advice_columns)
+        self.assertIn("rebalance_state", tables)

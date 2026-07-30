@@ -17,8 +17,10 @@ from trade_helper.strategy import (
     Advice,
     BasePlanInput,
     CycleState,
+    RebalanceInput,
     TacticalInput,
     evaluate_base_plan,
+    evaluate_rebalance,
     plan_tactical_orders,
     release_monthly_base_budget,
     update_cycle,
@@ -40,6 +42,7 @@ class DecisionRequest:
     markets: tuple[MarketSnapshot, ...]
     tactical_inputs: tuple[TacticalInput, ...]
     base_input: BasePlanInput
+    rebalance_inputs: tuple[RebalanceInput, ...] = ()
     advance_cycle: bool = True
 
 
@@ -91,8 +94,11 @@ def run_daily_decision(
         cycled_runtime.base_budget,
     )
     next_runtime = replace(cycled_runtime, base_budget=released)
+    rebalance = tuple(
+        evaluate_rebalance(config, item) for item in request.rebalance_inputs
+    )
     tactical = plan_tactical_orders(config, request.tactical_inputs)
-    advices = list(tactical)
+    advices = [*rebalance, *tactical]
     tactical_buy = sum(
         (item.amount_cny for item in tactical if item.action == "BUY"),
         start=Decimal("0"),
@@ -231,9 +237,37 @@ class DecisionStore:
                                 AdviceStatus.PENDING_CONFIRMATION.value,
                                 "；".join(item.reasons),
                                 item.level_id,
-                                "TACTICAL" if item.level_id else "BASE",
+                                (
+                                    "STRATEGIC"
+                                    if item.action == "SELL"
+                                    else "TACTICAL" if item.level_id else "BASE"
+                                ),
                             ),
                         )
+                if outcome.status in {
+                    DecisionStatus.READY, DecisionStatus.NO_ACTION
+                }:
+                    connection.executemany(
+                        """
+                        INSERT INTO rebalance_state(
+                            asset_id, days_above_max, last_evaluated_date,
+                            updated_at
+                        ) VALUES (?, ?, ?, ?)
+                        ON CONFLICT(asset_id) DO UPDATE SET
+                            days_above_max = excluded.days_above_max,
+                            last_evaluated_date = excluded.last_evaluated_date,
+                            updated_at = excluded.updated_at
+                        """,
+                        [
+                            (
+                                item.asset_id,
+                                item.days_above_max,
+                                request.now.date().isoformat(),
+                                request.now.isoformat(),
+                            )
+                            for item in request.rebalance_inputs
+                        ],
+                    )
         except sqlite3.IntegrityError as error:
             raise LedgerConflict(
                 f"decision run conflict: {outcome.decision_id}"

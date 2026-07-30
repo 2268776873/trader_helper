@@ -170,10 +170,16 @@ class ExecutionLedger:
                 actual_fen = cny_to_fen(
                     Decimal(fill.quantity) * fill.price
                 )
-                if advice["side"] == "BUY" and advice["funding_pool"]:
-                    self._apply_buy_fill_state(
-                        connection, advice, actual_fen, status, fill.filled_at
-                    )
+                if advice["funding_pool"]:
+                    if advice["side"] == "BUY":
+                        self._apply_buy_fill_state(
+                            connection, advice, actual_fen, status,
+                            fill.filled_at,
+                        )
+                    else:
+                        self._apply_sell_fill_state(
+                            connection, advice, actual_fen, fill.filled_at
+                        )
                 connection.execute(
                     """
                     INSERT INTO advice_fills(
@@ -307,6 +313,32 @@ class ExecutionLedger:
                 level_status, filled_fen, _iso(filled_at),
                 advice["asset_id"], level_id,
             ),
+        )
+
+    @staticmethod
+    def _apply_sell_fill_state(
+        connection: sqlite3.Connection,
+        advice: sqlite3.Row,
+        actual_fen: int,
+        filled_at: datetime,
+    ) -> None:
+        if advice["funding_pool"] != "STRATEGIC":
+            raise ValueError(
+                "sell proceeds must be assigned to strategic cash"
+            )
+        runtime = connection.execute(
+            "SELECT 1 FROM strategy_runtime WHERE runtime_id = 1"
+        ).fetchone()
+        if runtime is None:
+            raise ValueError("strategy runtime is not initialized")
+        connection.execute(
+            """
+            UPDATE strategy_runtime SET
+                strategic_fen = strategic_fen + ?,
+                updated_at = ?
+            WHERE runtime_id = 1
+            """,
+            (actual_fen, _iso(filled_at)),
         )
 
     def status(self, advice_id: str) -> AdviceStatus:

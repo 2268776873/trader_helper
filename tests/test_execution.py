@@ -146,3 +146,25 @@ class ExecutionLedgerTests(TestCase):
             initial.cash_pools.base_cny - Decimal("5000"),
             completed.cash_pools.base_cny,
         )
+
+    def test_sell_fill_adds_actual_proceeds_to_strategic_cash(self) -> None:
+        config = load_strategy_config(ROOT / "config" / "personal_v1.json")
+        store = StrategyStateStore(self.ledger)
+        initial = store.initialize_runtime(config)
+        self.execution.create_advice(
+            Advice(
+                "ADV-SELL", self.now, config.config_version,
+                "SP500", "513500", "SELL", 1000, Decimal("2"),
+                "rebalance test", None, "STRATEGIC",
+            )
+        )
+
+        self.execution.record_fill(
+            Fill("FILL-SELL", "ADV-SELL", self.now, 400, Decimal("2.01"))
+        )
+
+        updated = store.load_runtime()
+        self.assertEqual(
+            initial.cash_pools.strategic_cny + Decimal("804"),
+            updated.cash_pools.strategic_cny,
+        )

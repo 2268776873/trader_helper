@@ -17,7 +17,9 @@ from trade_helper.ledger import Ledger
 from trade_helper.market_data import MarketSnapshot
 from trade_helper.models import Readiness
 from trade_helper.state_store import StrategyStateStore
-from trade_helper.strategy import BaseCandidate, BasePlanInput, TacticalInput
+from trade_helper.strategy import (
+    BaseCandidate, BasePlanInput, RebalanceInput, TacticalInput,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -150,3 +152,43 @@ class DecisionTests(TestCase):
             if item.asset_id == "SP500"
         )
         self.assertTrue(all(item.near_high_days == 19 for item in sp_levels))
+
+    def test_hard_overweight_generates_audited_strategic_sell(self) -> None:
+        request = self.request()
+        rebalance = RebalanceInput(
+            "SP500", Decimal("500000"), Decimal("260000"),
+            Decimal("2"), 1,
+        )
+
+        result = run_daily_decision(
+            self.config,
+            self.runtime,
+            replace(request, rebalance_inputs=(rebalance,)),
+        )
+        sell = next(item for item in result.advices if item.action == "SELL")
+        self.assertEqual("SP500", sell.asset_id)
+        self.assertEqual(17500, sell.quantity)
+        DecisionStore(self.ledger).save(
+            result,
+            replace(request, rebalance_inputs=(rebalance,)),
+            self.states,
+            self.config,
+        )
+        connection = self.ledger.connect()
+        try:
+            saved = connection.execute(
+                """
+                SELECT side, funding_pool FROM advice
+                WHERE side = 'SELL'
+                """
+            ).fetchone()
+            rebalance_state = connection.execute(
+                """
+                SELECT days_above_max FROM rebalance_state
+                WHERE asset_id = 'SP500'
+                """
+            ).fetchone()
+        finally:
+            connection.close()
+        self.assertEqual("STRATEGIC", saved["funding_pool"])
+        self.assertEqual(1, rebalance_state["days_above_max"])
