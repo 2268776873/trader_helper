@@ -217,6 +217,15 @@ class Ledger:
                     updated_at TEXT NOT NULL,
                     PRIMARY KEY(asset_id, level_id)
                 );
+
+                CREATE TABLE IF NOT EXISTS market_snapshots (
+                    snapshot_id TEXT PRIMARY KEY,
+                    symbol TEXT NOT NULL,
+                    observed_at TEXT NOT NULL,
+                    readiness TEXT NOT NULL,
+                    reasons_json TEXT NOT NULL,
+                    payload_json TEXT NOT NULL
+                );
                     """
                 )
 
@@ -462,6 +471,7 @@ class Ledger:
             "config_versions",
             "strategy_runtime",
             "tactical_level_state",
+            "market_snapshots",
         }
         if table not in allowed:
             raise ValueError("unsupported table")
