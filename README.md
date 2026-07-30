@@ -67,6 +67,14 @@ python -m trade_helper.cli replay-report .\var\replay.csv --output .\var\replay-
 python -m trade_helper.cli doctor --database .\var\account.db
 ```
 
+每日决策只接受显式交易日历，不用周一至周五猜测开市。日历 CSV 包含
+`trading_date,is_open`：
+
+```powershell
+python -m trade_helper.cli calendar-import .\config\a_share_calendar.csv --database .\var\account.db
+.\scripts\run_daily_decision.ps1 -Python C:\path\to\python.exe
+```
+
 也可以使用 Windows 脚本，并在未配置 PATH 时传入 Python 完整路径：
 
 ```powershell

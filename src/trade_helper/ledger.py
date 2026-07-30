@@ -246,6 +246,13 @@ class Ledger:
                     observed_at TEXT NOT NULL,
                     PRIMARY KEY(asset_id, trading_date, source)
                 );
+
+                CREATE TABLE IF NOT EXISTS trading_calendar (
+                    trading_date TEXT PRIMARY KEY,
+                    is_open INTEGER NOT NULL CHECK(is_open IN (0, 1)),
+                    source TEXT NOT NULL,
+                    imported_at TEXT NOT NULL
+                );
                     """
                 )
 
@@ -494,6 +501,7 @@ class Ledger:
             "market_snapshots",
             "decision_runs",
             "reference_series",
+            "trading_calendar",
         }
         if table not in allowed:
             raise ValueError("unsupported table")

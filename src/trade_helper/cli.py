@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from uuid import uuid4
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
@@ -18,6 +19,9 @@ from trade_helper.replay import (
     write_replay_report,
 )
 from trade_helper.doctor import run_doctor
+from trade_helper.config import load_strategy_config
+from trade_helper.decision_service import DailyDecisionService, DecisionInputError
+from trade_helper.trading_calendar import TradingCalendarStore, load_calendar_csv
 from trade_helper.models import ProbeResult, Readiness
 from trade_helper.providers.sina import SinaError, SinaEtfProvider
 
@@ -92,6 +96,19 @@ def build_parser() -> argparse.ArgumentParser:
     doctor.add_argument(
         "--config", type=Path, default=Path("config/personal_v1.json")
     )
+    calendar = subparsers.add_parser(
+        "calendar-import", help="import an explicit A-share trading calendar"
+    )
+    calendar.add_argument("input", type=Path)
+    calendar.add_argument("--database", type=Path, required=True)
+    calendar.add_argument("--source", default="MANUAL_CSV")
+    daily = subparsers.add_parser(
+        "daily-decision", help="run and audit the daily decision from persisted data"
+    )
+    daily.add_argument("--database", type=Path, required=True)
+    daily.add_argument(
+        "--config", type=Path, default=Path("config/personal_v1.json")
+    )
     return parser
 
 
@@ -115,6 +132,52 @@ def main(argv: Sequence[str] | None = None) -> int:
         report = run_doctor(args.database, args.config)
         print(json.dumps(report.to_dict(), ensure_ascii=False, indent=2))
         return 0 if report.ready else 6
+    if args.command == "calendar-import":
+        ledger = Ledger(args.database)
+        ledger.initialize()
+        days = load_calendar_csv(args.input, args.source)
+        TradingCalendarStore(ledger).replace(days)
+        print(json.dumps({"ok": True, "rows": len(days)}, ensure_ascii=False))
+        return 0
+    if args.command == "daily-decision":
+        now = datetime.now().astimezone()
+        ledger = Ledger(args.database)
+        ledger.initialize()
+        calendar = TradingCalendarStore(ledger)
+        try:
+            day_number = calendar.trading_day_number(now.date())
+            if day_number is None:
+                print(
+                    json.dumps(
+                        {"ok": True, "skipped": True, "reason": "A股休市"},
+                        ensure_ascii=False,
+                    )
+                )
+                return 0
+            outcome = DailyDecisionService(
+                ledger, load_strategy_config(args.config)
+            ).execute(
+                decision_id=f"DEC-{now:%Y%m%d-%H%M%S}-{uuid4().hex[:8]}",
+                now=now,
+                a_share_trading_day_number=day_number,
+            )
+        except (ValueError, DecisionInputError) as error:
+            print(json.dumps({"ok": False, "error": str(error)}, ensure_ascii=False))
+            return 7
+        print(
+            json.dumps(
+                {
+                    "ok": True,
+                    "decision_id": outcome.decision_id,
+                    "status": outcome.status.value,
+                    "reasons": outcome.reasons,
+                    "advice_count": len(outcome.advices),
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 0
 
     if args.command in {"backup", "restore"}:
         try:
