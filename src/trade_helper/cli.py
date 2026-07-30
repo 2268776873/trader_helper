@@ -12,6 +12,11 @@ from trade_helper.excel_import import commit_preview, preview_workbook
 from trade_helper.ledger import Ledger, LedgerConflict
 from trade_helper.backup import BackupError, create_backup, restore_backup
 from trade_helper.shadow_run import build_shadow_report, write_shadow_report
+from trade_helper.replay import (
+    calculate_replay_metrics,
+    load_replay_csv,
+    write_replay_report,
+)
 from trade_helper.models import ProbeResult, Readiness
 from trade_helper.providers.sina import SinaError, SinaEtfProvider
 
@@ -74,6 +79,11 @@ def build_parser() -> argparse.ArgumentParser:
     shadow.add_argument("--database", type=Path, required=True)
     shadow.add_argument("--output", type=Path)
     shadow.add_argument("--required-days", type=int, default=20)
+    replay = subparsers.add_parser(
+        "replay-report", help="calculate a fixed set of historical replay metrics"
+    )
+    replay.add_argument("input", type=Path)
+    replay.add_argument("--output", type=Path)
     return parser
 
 
@@ -87,6 +97,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             write_shadow_report(report, args.output)
         print(json.dumps(report.to_dict(), ensure_ascii=False, indent=2))
         return 0 if report.completed else 5
+    if args.command == "replay-report":
+        metrics = calculate_replay_metrics(load_replay_csv(args.input))
+        if args.output:
+            write_replay_report(metrics, args.output)
+        print(json.dumps(metrics.to_dict(), ensure_ascii=False, indent=2))
+        return 0
 
     if args.command in {"backup", "restore"}:
         try:

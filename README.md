@@ -54,6 +54,13 @@ python -m trade_helper.cli restore .\var\backups\account.thbackup --database .\v
 python -m trade_helper.cli shadow-report --database .\var\account.db --output .\var\shadow-report.json
 ```
 
+历史回放结果 CSV 必须包含 `trading_date`、`portfolio_value_cny`、`cash_cny`
+和 `traded_value_cny`，报告固定输出收益、回撤、波动、换手和现金占用：
+
+```powershell
+python -m trade_helper.cli replay-report .\var\replay.csv --output .\var\replay-report.json
+```
+
 也可以使用 Windows 脚本，并在未配置 PATH 时传入 Python 完整路径：
 
 ```powershell
