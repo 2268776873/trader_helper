@@ -4,9 +4,11 @@ import tkinter as tk
 import os
 from dataclasses import dataclass
 from decimal import Decimal
-from tkinter import ttk
+from pathlib import Path
+from tkinter import filedialog, messagebox, ttk
 
 from trade_helper.ui.theme import COLORS, FONTS, status_color
+from trade_helper.ui.controller import DesktopController
 from trade_helper.ui.view_model import (
     DashboardRepository,
     DashboardViewModel,
@@ -27,8 +29,14 @@ class AssetView:
 
 
 class TradeHelperApp(tk.Tk):
-    def __init__(self, model: DashboardViewModel | None = None) -> None:
+    def __init__(
+        self,
+        model: DashboardViewModel | None = None,
+        database: str | Path = "var/account.db",
+    ) -> None:
         super().__init__()
+        self.database = Path(database)
+        self.controller = DesktopController(self.database)
         self.model = model or empty_dashboard()
         self.title("Trade Helper · Personal V1")
         self.geometry("1440x900")
@@ -136,6 +144,12 @@ class TradeHelperApp(tk.Tk):
             highlightbackground=COLORS["border"],
         )
         status.pack(side="right", pady=25)
+        tk.Button(
+            header, text="导入账户 Excel", command=self._import_excel,
+            font=FONTS["body"], fg=COLORS["window"], bg=COLORS["cyan"],
+            activebackground=COLORS["green"], relief="flat",
+            padx=16, pady=7, cursor="hand2",
+        ).pack(side="right", padx=(0, 12), pady=25)
         tk.Label(
             status, text="●", fg=status_color(self.model.data_status.value),
             bg=COLORS["surface"],
@@ -296,10 +310,62 @@ class TradeHelperApp(tk.Tk):
     def _money(value: Decimal) -> str:
         return f"¥{value:,.0f}"
 
+    def _import_excel(self) -> None:
+        workbook = filedialog.askopenfilename(
+            parent=self,
+            title="选择 Trade Helper 账户工作簿",
+            filetypes=(("Excel 工作簿", "*.xlsx"), ("所有文件", "*.*")),
+        )
+        if not workbook:
+            return
+        try:
+            summary = self.controller.preview_excel(workbook)
+        except Exception as error:
+            messagebox.showerror("无法读取工作簿", str(error), parent=self)
+            return
+        counts = summary.row_counts
+        lines = [
+            f"文件：{summary.source_name}",
+            f"账户快照：{counts['snapshots']}",
+            f"持仓行：{counts['positions']}",
+            f"成交行：{counts['trades']}",
+            f"资金流水：{counts['cash_flows']}",
+        ]
+        if not summary.valid:
+            issue_lines = [
+                f"{item.sheet} 第{item.row}行：{item.message}"
+                for item in summary.issues[:8]
+            ]
+            messagebox.showerror(
+                "导入校验未通过",
+                "\n".join((*lines, "", *issue_lines)),
+                parent=self,
+            )
+            return
+        confirmed = messagebox.askyesno(
+            "确认原子导入",
+            "\n".join((*lines, "", "校验通过。确认将整批数据写入本地账本？")),
+            parent=self,
+        )
+        if not confirmed:
+            return
+        result = self.controller.commit_excel(summary.content_hash)
+        if result.imported or result.duplicate:
+            messagebox.showinfo("导入完成", result.message, parent=self)
+            self._reload_dashboard()
+        else:
+            messagebox.showerror("导入冲突", result.message, parent=self)
+
+    def _reload_dashboard(self) -> None:
+        self.model = DashboardRepository(self.database).load()
+        for child in self.winfo_children():
+            child.destroy()
+        self._build_shell()
+
 
 def main() -> int:
     database = os.environ.get("TRADE_HELPER_DB", "var/account.db")
-    app = TradeHelperApp(DashboardRepository(database).load())
+    app = TradeHelperApp(DashboardRepository(database).load(), database)
     app.mainloop()
     return 0
 
