@@ -26,6 +26,8 @@ from trade_helper.market_collection import (
     MarketCollectionService,
     load_manual_supplement,
 )
+from trade_helper.example_data import create_example_database
+from zoneinfo import ZoneInfo
 from trade_helper.models import ProbeResult, Readiness
 from trade_helper.providers.sina import SinaError, SinaEtfProvider
 
@@ -127,6 +129,13 @@ def build_parser() -> argparse.ArgumentParser:
     collect.add_argument("supplement", type=Path)
     collect.add_argument("--database", type=Path, required=True)
     collect.add_argument(
+        "--config", type=Path, default=Path("config/personal_v1.json")
+    )
+    example = subparsers.add_parser(
+        "example-init", help="create a non-overwriting SAMPLE database"
+    )
+    example.add_argument("--database", type=Path, required=True)
+    example.add_argument(
         "--config", type=Path, default=Path("config/personal_v1.json")
     )
     return parser
@@ -239,6 +248,32 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
         )
         return 0 if not result.source_errors else 8
+    if args.command == "example-init":
+        example_now = datetime(
+            2026, 9, 14, 14, 0, tzinfo=ZoneInfo("Asia/Shanghai")
+        )
+        try:
+            outcome = create_example_database(
+                args.database,
+                load_strategy_config(args.config),
+                now=example_now,
+            )
+        except (FileExistsError, ValueError) as error:
+            print(json.dumps({"ok": False, "error": str(error)}, ensure_ascii=False))
+            return 9
+        print(
+            json.dumps(
+                {
+                    "ok": True,
+                    "database": str(args.database),
+                    "sample": True,
+                    "decision_status": outcome.status.value,
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 0
 
     if args.command in {"backup", "restore"}:
         try:

@@ -99,6 +99,16 @@ python -m trade_helper.cli market-collect .\config\market_supplement.example.jso
 - [Windows 构建](docs/windows_build.md)
 - [发布检查清单](docs/release_checklist.md)
 
+创建不会覆盖现有文件的示例数据库，并用示例账户启动客户端：
+
+```powershell
+python -m trade_helper.cli example-init --database .\var\example.db
+$env:TRADE_HELPER_DB = ".\var\example.db"
+python -m trade_helper.ui.app
+```
+
+示例数据的来源字段均以 `SAMPLE` 开头，不应作为真实交易依据。
+
 也可以使用 Windows 脚本，并在未配置 PATH 时传入 Python 完整路径：
 
 ```powershell
