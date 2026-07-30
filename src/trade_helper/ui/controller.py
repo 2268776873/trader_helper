@@ -14,6 +14,7 @@ from trade_helper.execution import (
 )
 from trade_helper.excel_import import ImportIssue, commit_preview, preview_workbook
 from trade_helper.ledger import Ledger, LedgerConflict
+from trade_helper.ledger import AccountSnapshot, PositionSnapshot
 
 
 @dataclass(frozen=True)
@@ -30,6 +31,22 @@ class ImportResult:
     imported: bool
     duplicate: bool
     message: str
+
+
+@dataclass(frozen=True)
+class PositionForm:
+    asset_id: str
+    etf_code: str
+    quantity: int
+    market_value_cny: Decimal
+
+
+@dataclass(frozen=True)
+class AccountForm:
+    total_assets_cny: Decimal
+    available_cash_cny: Decimal
+    positions: tuple[PositionForm, ...]
+    notes: str = ""
 
 
 class DesktopController:
@@ -107,3 +124,50 @@ class DesktopController:
                 attempt_id,
             )
         )
+
+    def record_account(
+        self,
+        form: AccountForm,
+        *,
+        occurred_at: datetime | None = None,
+    ) -> str:
+        when = occurred_at or datetime.now().astimezone()
+        if when.tzinfo is None:
+            raise ValueError("账户快照时间必须包含时区")
+        if form.total_assets_cny < 0 or form.available_cash_cny < 0:
+            raise ValueError("总资产和现金不能为负数")
+        if len(form.positions) != 3:
+            raise ValueError("必须填写三只配置 ETF")
+        if len({item.asset_id for item in form.positions}) != len(form.positions):
+            raise ValueError("资产 ID 不能重复")
+        if any(
+            item.quantity < 0 or item.market_value_cny < 0
+            for item in form.positions
+        ):
+            raise ValueError("持仓份额和市值不能为负数")
+        reconstructed = form.available_cash_cny + sum(
+            (item.market_value_cny for item in form.positions),
+            start=Decimal("0"),
+        )
+        if reconstructed != form.total_assets_cny:
+            raise ValueError(
+                f"账户不平衡：现金加持仓市值为 {reconstructed}，"
+                f"但总资产为 {form.total_assets_cny}"
+            )
+        snapshot_id = f"SNAP-APP-{when:%Y%m%d-%H%M%S}-{uuid4().hex[:8]}"
+        ledger = Ledger(self.database)
+        ledger.initialize()
+        ledger.add_snapshot(
+            AccountSnapshot(
+                snapshot_id, when, form.total_assets_cny,
+                form.available_cash_cny, Decimal("0"), "APP_FORM", form.notes,
+            ),
+            tuple(
+                PositionSnapshot(
+                    snapshot_id, item.asset_id, item.etf_code, item.quantity,
+                    item.market_value_cny, "APP_FORM",
+                )
+                for item in form.positions
+            ),
+        )
+        return snapshot_id

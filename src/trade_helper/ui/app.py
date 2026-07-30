@@ -9,7 +9,9 @@ from tkinter import filedialog, messagebox, simpledialog, ttk
 
 from trade_helper.execution import AdviceStatus
 from trade_helper.ui.theme import COLORS, FONTS, status_color
-from trade_helper.ui.controller import DesktopController
+from trade_helper.ui.controller import (
+    AccountForm, DesktopController, PositionForm,
+)
 from trade_helper.ui.view_model import (
     DashboardRepository,
     DashboardViewModel,
@@ -155,6 +157,12 @@ class TradeHelperApp(tk.Tk):
             activebackground=COLORS["green"], relief="flat",
             padx=16, pady=7, cursor="hand2",
         ).pack(side="right", padx=(0, 12), pady=25)
+        tk.Button(
+            header, text="录入账户", command=self._record_account,
+            font=FONTS["body"], fg=COLORS["text"],
+            bg=COLORS["surface_hover"], activebackground=COLORS["blue"],
+            relief="flat", padx=16, pady=7, cursor="hand2",
+        ).pack(side="right", padx=(0, 8), pady=25)
         tk.Label(
             status, text="●", fg=status_color(self.model.data_status.value),
             bg=COLORS["surface"],
@@ -507,6 +515,57 @@ class TradeHelperApp(tk.Tk):
                     record.summary,
                 ),
             )
+
+    def _record_account(self) -> None:
+        total = simpledialog.askfloat(
+            "账户总资产", "请输入券商显示的账户总资产（元）",
+            parent=self, minvalue=0,
+        )
+        if total is None:
+            return
+        cash = simpledialog.askfloat(
+            "可用现金", "请输入货币基金/现金总市值（元）",
+            parent=self, minvalue=0,
+        )
+        if cash is None:
+            return
+        definitions = (
+            ("SP500", "513500", "标普500"),
+            ("NASDAQ", "513100", "纳指100"),
+            ("DIVIDEND", "515450", "红利低波"),
+        )
+        positions = []
+        for asset_id, code, name in definitions:
+            quantity = simpledialog.askinteger(
+                f"{name}份额", f"请输入 {code} 的实际持仓份额",
+                parent=self, minvalue=0,
+            )
+            if quantity is None:
+                return
+            value = simpledialog.askfloat(
+                f"{name}市值", f"请输入 {code} 的券商市值（元）",
+                parent=self, minvalue=0,
+            )
+            if value is None:
+                return
+            positions.append(
+                PositionForm(
+                    asset_id, code, quantity, Decimal(str(value))
+                )
+            )
+        try:
+            snapshot_id = self.controller.record_account(
+                AccountForm(
+                    Decimal(str(total)), Decimal(str(cash)), tuple(positions)
+                )
+            )
+        except Exception as error:
+            messagebox.showerror("账户校验未通过", str(error), parent=self)
+            return
+        messagebox.showinfo(
+            "账户快照已保存", f"快照 ID：{snapshot_id}", parent=self
+        )
+        self._reload_dashboard()
 
 
 def main() -> int:

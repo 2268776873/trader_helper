@@ -8,7 +8,9 @@ from openpyxl import Workbook
 
 from trade_helper.ledger import Ledger
 from trade_helper.execution import Advice, AdviceStatus, ExecutionLedger
-from trade_helper.ui.controller import DesktopController
+from trade_helper.ui.controller import (
+    AccountForm, DesktopController, PositionForm,
+)
 
 
 HEADERS = {
@@ -75,3 +77,23 @@ class DesktopControllerTests(TestCase):
 
             self.assertEqual(AdviceStatus.PARTIALLY_FILLED, status)
             self.assertEqual(1, ledger.count("trades"))
+
+    def test_account_form_is_atomic_and_must_reconcile(self) -> None:
+        with TemporaryDirectory() as directory:
+            database = Path(directory) / "account.db"
+            controller = DesktopController(database)
+            positions = (
+                PositionForm("SP500", "513500", 24000, Decimal("60000")),
+                PositionForm("NASDAQ", "513100", 30000, Decimal("60000")),
+                PositionForm("DIVIDEND", "515450", 21000, Decimal("30000")),
+            )
+            with self.assertRaises(ValueError):
+                controller.record_account(
+                    AccountForm(Decimal("499999"), Decimal("350000"), positions)
+                )
+            controller.record_account(
+                AccountForm(Decimal("500000"), Decimal("350000"), positions)
+            )
+            ledger = Ledger(database)
+            self.assertEqual(1, ledger.count("account_snapshots"))
+            self.assertEqual(3, ledger.count("position_snapshots"))
