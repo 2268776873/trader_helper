@@ -184,6 +184,39 @@ class Ledger:
                     FOREIGN KEY(advice_id) REFERENCES advice(advice_id),
                     FOREIGN KEY(attempt_id) REFERENCES order_attempts(attempt_id)
                 );
+
+                CREATE TABLE IF NOT EXISTS config_versions (
+                    config_version TEXT PRIMARY KEY,
+                    status TEXT NOT NULL,
+                    effective_at TEXT NOT NULL,
+                    content_json TEXT NOT NULL,
+                    content_hash TEXT NOT NULL UNIQUE
+                );
+
+                CREATE TABLE IF NOT EXISTS strategy_runtime (
+                    runtime_id INTEGER PRIMARY KEY CHECK(runtime_id = 1),
+                    config_version TEXT NOT NULL,
+                    base_pool_fen INTEGER NOT NULL CHECK(base_pool_fen >= 0),
+                    tactical_sp_fen INTEGER NOT NULL CHECK(tactical_sp_fen >= 0),
+                    tactical_nd_fen INTEGER NOT NULL CHECK(tactical_nd_fen >= 0),
+                    tactical_dv_fen INTEGER NOT NULL CHECK(tactical_dv_fen >= 0),
+                    strategic_fen INTEGER NOT NULL CHECK(strategic_fen >= 0),
+                    base_budget_fen INTEGER NOT NULL CHECK(base_budget_fen >= 0),
+                    released_months_json TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    FOREIGN KEY(config_version) REFERENCES config_versions(config_version)
+                );
+
+                CREATE TABLE IF NOT EXISTS tactical_level_state (
+                    asset_id TEXT NOT NULL,
+                    level_id TEXT NOT NULL,
+                    sort_order INTEGER NOT NULL,
+                    status TEXT NOT NULL,
+                    filled_fen INTEGER NOT NULL CHECK(filled_fen >= 0),
+                    near_high_days INTEGER NOT NULL CHECK(near_high_days >= 0),
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY(asset_id, level_id)
+                );
                     """
                 )
 
@@ -426,6 +459,9 @@ class Ledger:
             "advice",
             "order_attempts",
             "advice_fills",
+            "config_versions",
+            "strategy_runtime",
+            "tactical_level_state",
         }
         if table not in allowed:
             raise ValueError("unsupported table")

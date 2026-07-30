@@ -2,7 +2,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import TestCase
 
-from openpyxl import Workbook
+from openpyxl import Workbook, load_workbook
 
 from trade_helper.excel_import import InvalidImport, commit_preview, preview_workbook
 from trade_helper.ledger import Ledger
@@ -96,3 +96,16 @@ class ExcelImportTests(TestCase):
 
         self.assertEqual(0, self.database.count("account_snapshots"))
         self.assertEqual(0, self.database.count("cash_flows"))
+
+    def test_formula_only_template_rows_are_ignored(self) -> None:
+        path = self.make_workbook()
+        workbook = load_workbook(path)
+        workbook["交易流水"]["H5"] = "=F5*G5"
+        workbook["交易流水"]["I5"] = '=IF(E5="BUY",-H5,H5)'
+        workbook.save(path)
+        workbook.close()
+
+        preview = preview_workbook(path)
+
+        self.assertTrue(preview.valid)
+        self.assertEqual(1, preview.row_counts["trades"])

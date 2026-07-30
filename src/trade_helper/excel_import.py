@@ -76,7 +76,12 @@ def _rows(sheet) -> list[tuple[int, dict[str, object]]]:
     for row_number, values in enumerate(
         sheet.iter_rows(min_row=4, values_only=True), start=4
     ):
-        if all(value is None or value == "" for value in values):
+        if all(
+            value is None
+            or value == ""
+            or (isinstance(value, str) and value.startswith("="))
+            for value in values
+        ):
             continue
         result.append((row_number, dict(zip(headers, values))))
     return result

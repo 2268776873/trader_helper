@@ -21,6 +21,17 @@ python -m trade_helper.cli probe --output .\var\feasibility.json
 python -m unittest discover -s tests -v
 ```
 
+Excel 导入采用“预览后提交”流程。预览只校验、不写数据库：
+
+```powershell
+python -m trade_helper.cli excel-preview .\outputs\account_template\trade_helper_account_template.xlsx
+python -m trade_helper.cli excel-import .\outputs\account_template\trade_helper_account_template.xlsx --database .\var\account.db
+```
+
+导入以整个文件为事务边界：任一有效数据行错误都会阻止整批写入；同一内容重复
+导入会返回 `"imported": false`，不会重复生成快照、成交或资金流水。模板自带示例行，
+正式使用时应删除或覆盖示例数据。
+
 也可以使用 Windows 脚本，并在未配置 PATH 时传入 Python 完整路径：
 
 ```powershell
