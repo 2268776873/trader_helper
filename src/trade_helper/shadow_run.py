@@ -29,11 +29,19 @@ class ShadowRunReport:
     blocked_days: int
     total_advices: int
     unresolved_advices: int
+    missing_calendar_dates: tuple[date, ...]
+    closed_dates_with_decisions: tuple[date, ...]
     days: tuple[ShadowDay, ...]
 
     def to_dict(self) -> dict[str, object]:
         payload = asdict(self)
         payload["generated_at"] = self.generated_at.isoformat()
+        payload["missing_calendar_dates"] = [
+            item.isoformat() for item in self.missing_calendar_dates
+        ]
+        payload["closed_dates_with_decisions"] = [
+            item.isoformat() for item in self.closed_dates_with_decisions
+        ]
         for item in payload["days"]:
             item["trading_date"] = item["trading_date"].isoformat()
         return payload
@@ -62,6 +70,12 @@ def build_shadow_report(
             ORDER BY created_at
             """
         ).fetchall()
+        calendar = {
+            date.fromisoformat(row["trading_date"]): bool(row["is_open"])
+            for row in connection.execute(
+                "SELECT trading_date, is_open FROM trading_calendar"
+            ).fetchall()
+        }
     decisions_by_day: dict[date, list] = {}
     for row in decisions:
         day = datetime.fromisoformat(row["generated_at"]).date()
@@ -71,6 +85,21 @@ def build_shadow_report(
         day = datetime.fromisoformat(row["created_at"]).date()
         advices_by_day.setdefault(day, []).append(row)
     terminal = {"FILLED", "CANCELLED", "EXPIRED", "REJECTED", "NOT_ATTEMPTED"}
+    missing_calendar_dates = tuple(
+        sorted(day for day in decisions_by_day if day not in calendar)
+    )
+    closed_dates_with_decisions = tuple(
+        sorted(
+            day
+            for day in decisions_by_day
+            if day in calendar and not calendar[day]
+        )
+    )
+    eligible_decisions = {
+        day: rows
+        for day, rows in decisions_by_day.items()
+        if calendar.get(day) is True
+    }
     days = tuple(
         ShadowDay(
             day,
@@ -83,7 +112,7 @@ def build_shadow_report(
                 for item in advices_by_day.get(day, [])
             ),
         )
-        for day, rows in sorted(decisions_by_day.items())
+        for day, rows in sorted(eligible_decisions.items())
     )
     observed = len(days)
     return ShadowRunReport(
@@ -95,6 +124,8 @@ def build_shadow_report(
         sum(item.blocked_count > 0 for item in days),
         sum(item.advice_count for item in days),
         sum(item.unresolved_advice_count for item in days),
+        missing_calendar_dates,
+        closed_dates_with_decisions,
         days,
     )
 
