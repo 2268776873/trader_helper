@@ -1,3 +1,4 @@
+import json
 from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
@@ -7,7 +8,10 @@ from zoneinfo import ZoneInfo
 
 from trade_helper.config import load_strategy_config
 from trade_helper.ledger import Ledger
-from trade_helper.market_collection import MarketCollectionService
+from trade_helper.market_collection import (
+    MarketCollectionService,
+    load_manual_supplement,
+)
 from trade_helper.models import Quote, Readiness
 
 
@@ -117,3 +121,47 @@ class MarketCollectionTests(TestCase):
             self.assertTrue(
                 all("q2: offline" in item.reasons for item in result.snapshots)
             )
+
+    def test_manual_supplement_rejects_invalid_numeric_data_cleanly(self) -> None:
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "bad.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "observed_at": "2026-07-30T14:00:00+08:00",
+                        "assets": {
+                            "SP500": {
+                                "valuations": [
+                                    {"source": "v1", "value": "NaN"}
+                                ]
+                            }
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(
+                ValueError, r"SP500\.valuations\[0\]\.value"
+            ):
+                load_manual_supplement(path)
+
+    def test_manual_supplement_rejects_missing_source_cleanly(self) -> None:
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "bad.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "observed_at": "2026-07-30T14:00:00+08:00",
+                        "assets": {
+                            "SP500": {
+                                "quote": {"last": 2, "bid": 2, "ask": 2}
+                            }
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, r"SP500\.quote\.source"):
+                load_manual_supplement(path)

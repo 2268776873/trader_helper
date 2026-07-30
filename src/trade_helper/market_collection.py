@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, replace
 from datetime import datetime
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Protocol
 
@@ -67,14 +67,88 @@ class CollectionResult:
 def load_manual_supplement(
     path: str | Path,
 ) -> tuple[datetime, dict[str, dict[str, object]]]:
-    payload = json.loads(Path(path).read_text(encoding="utf-8"))
-    observed_at = datetime.fromisoformat(payload["observed_at"])
+    try:
+        payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    except json.JSONDecodeError as error:
+        raise ValueError(
+            f"manual supplement is not valid JSON: line {error.lineno}, "
+            f"column {error.colno}"
+        ) from error
+    if not isinstance(payload, dict):
+        raise ValueError("manual supplement root must be an object")
+    try:
+        observed_at = datetime.fromisoformat(str(payload["observed_at"]))
+    except KeyError as error:
+        raise ValueError("manual supplement observed_at is required") from error
+    except ValueError as error:
+        raise ValueError("manual supplement observed_at must be ISO-8601") from error
     if observed_at.tzinfo is None:
         raise ValueError("manual supplement observed_at must include timezone")
     assets = payload.get("assets")
     if not isinstance(assets, dict):
         raise ValueError("manual supplement assets must be an object")
+    for asset_id, supplement in assets.items():
+        if not isinstance(asset_id, str) or not asset_id.strip():
+            raise ValueError("manual supplement asset id must be non-empty")
+        if not isinstance(supplement, dict):
+            raise ValueError(f"{asset_id} supplement must be an object")
+        _validate_supplement(asset_id, supplement)
     return observed_at, assets
+
+
+def _validate_supplement(asset_id: str, supplement: dict[str, object]) -> None:
+    valuations = supplement.get("valuations", [])
+    if not isinstance(valuations, list):
+        raise ValueError(f"{asset_id}.valuations must be a list")
+    for index, item in enumerate(valuations):
+        _validate_value_source(f"{asset_id}.valuations[{index}]", item)
+    for field in ("index", "fx"):
+        item = supplement.get(field)
+        if item is not None:
+            _validate_value_source(f"{asset_id}.{field}", item)
+    quote = supplement.get("quote")
+    if quote is not None:
+        if not isinstance(quote, dict):
+            raise ValueError(f"{asset_id}.quote must be an object")
+        _source(f"{asset_id}.quote", quote)
+        for field in ("last", "bid", "ask"):
+            value = quote.get(field)
+            if value is not None:
+                _positive_decimal(f"{asset_id}.quote.{field}", value)
+    reference = supplement.get("reference_value_cny")
+    if reference is not None:
+        _positive_decimal(f"{asset_id}.reference_value_cny", reference)
+    announcement = supplement.get("announcement")
+    if announcement is not None:
+        if not isinstance(announcement, dict):
+            raise ValueError(f"{asset_id}.announcement must be an object")
+        _source(f"{asset_id}.announcement", announcement)
+
+
+def _validate_value_source(path: str, item: object) -> None:
+    if not isinstance(item, dict):
+        raise ValueError(f"{path} must be an object")
+    _source(path, item)
+    if "value" not in item:
+        raise ValueError(f"{path}.value is required")
+    _positive_decimal(f"{path}.value", item["value"])
+
+
+def _source(path: str, item: dict[str, object]) -> str:
+    source = str(item.get("source", "")).strip()
+    if not source:
+        raise ValueError(f"{path}.source is required")
+    return source
+
+
+def _positive_decimal(path: str, value: object) -> Decimal:
+    try:
+        number = Decimal(str(value))
+    except (InvalidOperation, ValueError) as error:
+        raise ValueError(f"{path} must be numeric") from error
+    if not number.is_finite() or number <= 0:
+        raise ValueError(f"{path} must be a finite positive number")
+    return number
 
 
 class MarketCollectionService:
