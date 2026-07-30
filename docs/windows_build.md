@@ -14,7 +14,15 @@
 ```
 
 脚本先运行全部自动测试。测试失败时不会生成安装产物；测试通过后使用
-`TradeHelper.spec` 生成 `dist\TradeHelper.exe`。
+`TradeHelper.spec` 生成 `dist\TradeHelper.exe`，随后生成
+`TradeHelper-<version>-windows-x64.zip` 和对应 `.sha256`。
+
+发布 ZIP 自动包含使用手册、隐私与风险提示、行情补充示例和账户模板。验证脚本检查
+必需文件，并拒绝任何数据库、备份、`var` 内容或真实账户工作簿：
+
+```powershell
+.\scripts\verify_windows_release.ps1 -Archive .\dist\TradeHelper-0.1.0-windows-x64.zip
+```
 
 当前产物是免安装单文件客户端。首次正式发布前还需要完成：
 

@@ -1,5 +1,6 @@
 param(
-    [string]$Python = "python"
+    [string]$Python = "python",
+    [string]$Version = "0.1.0"
 )
 
 $ErrorActionPreference = "Stop"
@@ -16,6 +17,9 @@ try {
         throw "PyInstaller failed."
     }
     Write-Host "Built: $projectRoot\dist\TradeHelper.exe"
+    & "$PSScriptRoot\package_windows_release.ps1" `
+        -Version $Version `
+        -Executable "$projectRoot\dist\TradeHelper.exe"
 }
 finally {
     Pop-Location
