@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import json
 from contextlib import closing
-from datetime import datetime, timedelta
+from dataclasses import dataclass
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 
 from trade_helper.config import StrategyConfig
@@ -24,11 +25,36 @@ class DecisionInputError(RuntimeError):
     pass
 
 
+@dataclass(frozen=True)
+class ExistingDecision:
+    decision_id: str
+    generated_at: datetime
+    status: str
+
+
 class DailyDecisionService:
     def __init__(self, ledger: Ledger, config: StrategyConfig) -> None:
         self.ledger = ledger
         self.config = config
         self.states = StrategyStateStore(ledger)
+
+    def successful_decision_on(self, trading_date: date) -> ExistingDecision | None:
+        with closing(self.ledger.connect()) as connection:
+            rows = connection.execute(
+                """
+                SELECT decision_id, generated_at, status
+                FROM decision_runs
+                WHERE status IN ('READY', 'NO_ACTION')
+                ORDER BY generated_at DESC, decision_id DESC
+                """
+            ).fetchall()
+        for row in rows:
+            generated_at = datetime.fromisoformat(row["generated_at"])
+            if generated_at.date() == trading_date:
+                return ExistingDecision(
+                    str(row["decision_id"]), generated_at, str(row["status"])
+                )
+        return None
 
     def build_request(
         self,

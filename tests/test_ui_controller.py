@@ -1,14 +1,16 @@
 from pathlib import Path
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from tempfile import TemporaryDirectory
 from unittest import TestCase
 
 from openpyxl import Workbook
 
+from trade_helper.config import load_strategy_config
 from trade_helper.ledger import CashFlow, Ledger
 from trade_helper.execution import Advice, AdviceStatus, ExecutionLedger
+from trade_helper.example_data import create_example_database
 from trade_helper.models import Quote
 from trade_helper.ui.controller import (
     AccountForm, DesktopController, PositionForm,
@@ -185,3 +187,35 @@ class DesktopControllerTests(TestCase):
             self.assertIsNotNone(result.safety_backup)
             self.assertTrue(result.safety_backup.is_file())
             self.assertEqual(1, Ledger(active).count("cash_flows"))
+
+    def test_client_imports_calendar_and_skips_duplicate_daily_decision(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            database = root / "account.db"
+            config_path = (
+                Path(__file__).resolve().parents[1]
+                / "config" / "personal_v1.json"
+            )
+            config = load_strategy_config(config_path)
+            now = datetime(
+                2026, 9, 14, 14, 0, tzinfo=timezone(timedelta(hours=8))
+            )
+            create_example_database(database, config, now=now)
+            controller = DesktopController(database)
+            calendar_file = root / "calendar.csv"
+            calendar_file.write_text(
+                "trading_date,is_open\n"
+                "2026-09-14,1\n"
+                "2026-09-15,0\n",
+                encoding="utf-8",
+            )
+
+            calendar = controller.import_trading_calendar(calendar_file)
+            repeated = controller.run_daily_decision(
+                config_path, now=now
+            )
+
+        self.assertEqual(2, calendar.total_days)
+        self.assertEqual(1, calendar.open_days)
+        self.assertTrue(repeated.skipped)
+        self.assertEqual("READY", repeated.status)

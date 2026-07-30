@@ -611,6 +611,26 @@ class TradeHelperApp(tk.Tk):
             font=FONTS["small"],
         )
         collect_button.pack(side="left")
+        tk.Button(
+            actions,
+            text="导入交易日历",
+            command=lambda: self._import_calendar_from_file(
+                window, collection_status
+            ),
+            bg=COLORS["surface_hover"], fg=COLORS["text"],
+            relief="flat", padx=14, pady=8, cursor="hand2",
+            font=FONTS["small"],
+        ).pack(side="left", padx=(10, 0))
+        tk.Button(
+            actions,
+            text="运行当日决策",
+            command=lambda: self._run_client_decision(
+                window, collection_status
+            ),
+            bg=COLORS["surface_hover"], fg=COLORS["text"],
+            relief="flat", padx=14, pady=8, cursor="hand2",
+            font=FONTS["small"],
+        ).pack(side="left", padx=(10, 0))
         tk.Label(
             actions, textvariable=collection_status, font=FONTS["small"],
             fg=COLORS["muted"], bg=COLORS["window"],
@@ -710,6 +730,65 @@ class TradeHelperApp(tk.Tk):
                 )
 
         threading.Thread(target=collect, daemon=True).start()
+
+    def _import_calendar_from_file(
+        self,
+        window: tk.Toplevel,
+        status: tk.StringVar,
+    ) -> None:
+        source = filedialog.askopenfilename(
+            parent=window,
+            title="选择 A 股交易日历",
+            filetypes=(("CSV 文件", "*.csv"), ("所有文件", "*.*")),
+        )
+        if not source:
+            return
+        try:
+            result = self.controller.import_trading_calendar(source)
+        except Exception as error:
+            messagebox.showerror("日历导入失败", str(error), parent=window)
+            return
+        status.set(
+            f"日历已导入 · {result.first_date} 至 {result.last_date} · "
+            f"开市 {result.open_days}/{result.total_days} 天"
+        )
+
+    def _run_client_decision(
+        self,
+        window: tk.Toplevel,
+        status: tk.StringVar,
+    ) -> None:
+        try:
+            result = self.controller.run_daily_decision(
+                self._strategy_config_path()
+            )
+        except Exception as error:
+            messagebox.showerror("当日决策失败", str(error), parent=window)
+            return
+        self._reload_dashboard()
+        if result.skipped:
+            status.set(f"决策已安全跳过 · {'；'.join(result.reasons)}")
+            messagebox.showinfo(
+                "无需重复运行",
+                "；".join(result.reasons),
+                parent=window,
+            )
+            return
+        status.set(
+            f"决策完成 · {result.status} · 建议 {result.advice_count} 条"
+        )
+        if result.status == "BLOCKED":
+            messagebox.showwarning(
+                "决策已阻断",
+                "；".join(result.reasons) or "请检查账户和行情数据。",
+                parent=window,
+            )
+        else:
+            messagebox.showinfo(
+                "决策完成",
+                f"状态：{result.status}\n建议：{result.advice_count} 条",
+                parent=window,
+            )
 
     def _finish_market_collection(
         self,

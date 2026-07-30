@@ -7,6 +7,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from trade_helper.backup import BackupManifest, create_backup, restore_backup
+from trade_helper.decision_service import DailyDecisionService
 from trade_helper.execution import (
     AdviceStatus,
     ExecutionLedger,
@@ -22,6 +23,10 @@ from trade_helper.market_collection import (
     MarketCollectionService,
     QuoteSource,
     load_manual_supplement,
+)
+from trade_helper.trading_calendar import (
+    TradingCalendarStore,
+    load_calendar_csv,
 )
 
 
@@ -69,6 +74,23 @@ class MarketCollectionSummary:
 class RestoreSummary:
     manifest: BackupManifest
     safety_backup: Path | None
+
+
+@dataclass(frozen=True)
+class CalendarImportSummary:
+    total_days: int
+    open_days: int
+    first_date: str
+    last_date: str
+
+
+@dataclass(frozen=True)
+class ClientDecisionSummary:
+    skipped: bool
+    decision_id: str | None
+    status: str
+    advice_count: int
+    reasons: tuple[str, ...]
 
 
 class DesktopController:
@@ -236,3 +258,55 @@ class DesktopController:
             create_backup(self.database, safety_backup)
         manifest = restore_backup(source, self.database)
         return RestoreSummary(manifest, safety_backup)
+
+    def import_trading_calendar(
+        self,
+        source_file: str | Path,
+        *,
+        source_name: str = "CLIENT_CSV",
+    ) -> CalendarImportSummary:
+        days = load_calendar_csv(source_file, source_name)
+        ledger = Ledger(self.database)
+        ledger.initialize()
+        TradingCalendarStore(ledger).replace(days)
+        ordered = sorted(days, key=lambda item: item.trading_date)
+        return CalendarImportSummary(
+            len(ordered),
+            sum(item.is_open for item in ordered),
+            ordered[0].trading_date.isoformat(),
+            ordered[-1].trading_date.isoformat(),
+        )
+
+    def run_daily_decision(
+        self,
+        config: str | Path,
+        *,
+        now: datetime | None = None,
+    ) -> ClientDecisionSummary:
+        when = now or datetime.now().astimezone()
+        ledger = Ledger(self.database)
+        ledger.initialize()
+        day_number = TradingCalendarStore(ledger).trading_day_number(
+            when.date()
+        )
+        if day_number is None:
+            return ClientDecisionSummary(True, None, "MARKET_CLOSED", 0, ("A股休市",))
+        service = DailyDecisionService(ledger, load_strategy_config(config))
+        existing = service.successful_decision_on(when.date())
+        if existing is not None:
+            return ClientDecisionSummary(
+                True, existing.decision_id, existing.status, 0,
+                ("当日已有成功决策",),
+            )
+        outcome = service.execute(
+            decision_id=f"DEC-{when:%Y%m%d-%H%M%S}-{uuid4().hex[:8]}",
+            now=when,
+            a_share_trading_day_number=day_number,
+        )
+        return ClientDecisionSummary(
+            False,
+            outcome.decision_id,
+            outcome.status.value,
+            len(outcome.advices),
+            outcome.reasons,
+        )

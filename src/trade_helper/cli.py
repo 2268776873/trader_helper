@@ -198,9 +198,25 @@ def main(argv: Sequence[str] | None = None) -> int:
                     )
                 )
                 return 0
-            outcome = DailyDecisionService(
+            decision_service = DailyDecisionService(
                 ledger, load_strategy_config(args.config)
-            ).execute(
+            )
+            existing = decision_service.successful_decision_on(now.date())
+            if existing is not None:
+                print(
+                    json.dumps(
+                        {
+                            "ok": True,
+                            "skipped": True,
+                            "reason": "当日已有成功决策",
+                            "decision_id": existing.decision_id,
+                            "status": existing.status,
+                        },
+                        ensure_ascii=False,
+                    )
+                )
+                return 0
+            outcome = decision_service.execute(
                 decision_id=f"DEC-{now:%Y%m%d-%H%M%S}-{uuid4().hex[:8]}",
                 now=now,
                 a_share_trading_day_number=day_number,

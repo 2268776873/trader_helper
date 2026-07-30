@@ -78,7 +78,7 @@ python -m trade_helper.cli doctor --database .\var\account.db
 
 ```powershell
 python -m trade_helper.cli calendar-import .\config\a_share_calendar.csv --database .\var\account.db
-.\scripts\run_daily_decision.ps1 -Python C:\path\to\python.exe
+.\scripts\run_daily_pipeline.ps1 -Python C:\path\to\python.exe
 ```
 
 生产采集会自动请求新浪和东方财富公开行情，并读取人工复核补充文件中的双估值、
@@ -89,8 +89,9 @@ python -m trade_helper.cli calendar-import .\config\a_share_calendar.csv --datab
 python -m trade_helper.cli market-collect .\config\market_supplement.example.json --database .\var\account.db
 ```
 
-任一行情源失败、双估值缺失或冲突、公告阻断时仍会保存原始快照，但状态为
-`BLOCKED`，不会生成可执行建议。
+公共源失败、双估值缺失或冲突、公告阻断时仍会保存原始快照。只有存在两份独立、
+新鲜且一致的报价（允许独立券商人工报价补位）以及完整估值等输入时才会 READY；
+否则状态为 `BLOCKED`，不会生成可执行建议。
 
 完整操作和发布资料：
 
@@ -98,6 +99,7 @@ python -m trade_helper.cli market-collect .\config\market_supplement.example.jso
 - [隐私与风险提示](docs/privacy_and_risk.md)
 - [Windows 构建](docs/windows_build.md)
 - [发布检查清单](docs/release_checklist.md)
+- [客户端每日流程](docs/client_daily_workflow.md)
 
 创建不会覆盖现有文件的示例数据库，并用示例账户启动客户端：
 
