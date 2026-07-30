@@ -1,16 +1,21 @@
 import json
 from datetime import date
+from decimal import Decimal
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import TestCase
 from unittest.mock import patch
+from types import SimpleNamespace
 
 from trade_helper.config import load_strategy_config
 from trade_helper.replay_suite import (
     REQUIRED_SCENARIOS,
+    ReplaySuiteVariant,
     _validate_scenario_period,
+    compare_replay_suites,
     run_replay_suite,
 )
+from trade_helper.replay import ReplayMetrics
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -129,3 +134,50 @@ class ReplaySuiteTests(TestCase):
                 date(2024, 1, 2),
                 2,
             )
+
+    def test_compares_complete_metrics_from_real_suite_variants(self) -> None:
+        def suite(total_return: str):
+            scenarios = tuple(
+                SimpleNamespace(
+                    scenario_id=scenario_id,
+                    replay=SimpleNamespace(
+                        metrics=ReplayMetrics(
+                            date(2020, 1, 1),
+                            date(2022, 1, 1),
+                            500,
+                            Decimal(total_return),
+                            Decimal(total_return),
+                            Decimal("0.2"),
+                            Decimal("0.1"),
+                            Decimal("0.3"),
+                            Decimal("0.4"),
+                            Decimal("50000"),
+                        )
+                    ),
+                )
+                for scenario_id in sorted(REQUIRED_SCENARIOS)
+            )
+            return SimpleNamespace(
+                scenarios=scenarios,
+                to_dict=lambda: {"coverage": {"complete": True}},
+            )
+
+        result = compare_replay_suites(
+            (
+                ReplaySuiteVariant("baseline", suite("0.1")),
+                ReplaySuiteVariant("lower-trigger", suite("0.12")),
+            ),
+            baseline="baseline",
+        )
+
+        self.assertEqual(4, len(result.scenario_reports))
+        self.assertTrue(
+            all(
+                report.annualized_return_range == Decimal("0.02")
+                for _, report in result.scenario_reports
+            )
+        )
+        self.assertIn(
+            "never mutates",
+            result.to_dict()["selection_policy"],
+        )

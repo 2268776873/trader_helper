@@ -17,8 +17,22 @@ class InstallerSourceTests(TestCase):
         )
         self.assertIn("PrivilegesRequired=lowest", source)
         self.assertIn("skipifsilent", source)
+        self.assertIn("InfoBeforeFile=..\\RELEASE_NOTES.md", source)
+        run_line = next(
+            line for line in source.splitlines()
+            if "postinstall" in line
+        )
+        self.assertIn("unchecked", run_line)
         self.assertIn(
             'Source: "{#MyReleaseRoot}\\TradeHelperCLI.exe"',
+            source,
+        )
+        self.assertIn(
+            'Source: "{#MyReleaseRoot}\\scripts\\*"',
+            source,
+        )
+        self.assertIn(
+            'Source: "{#MyReleaseRoot}\\RELEASE_NOTES.md"',
             source,
         )
         self.assertIn(

@@ -7,6 +7,11 @@ from datetime import date
 from pathlib import Path
 
 from trade_helper.config import StrategyConfig
+from trade_helper.replay import (
+    SensitivityReport,
+    SensitivityVariant,
+    compare_sensitivity,
+)
 from trade_helper.strategy_replay import (
     StrategyReplayResult,
     load_historical_replay_csv,
@@ -76,6 +81,39 @@ class ReplaySuiteResult:
                 == REQUIRED_SCENARIOS,
             },
             "scenarios": [item.to_dict() for item in self.scenarios],
+        }
+
+
+@dataclass(frozen=True)
+class ReplaySuiteVariant:
+    name: str
+    result: ReplaySuiteResult
+
+
+@dataclass(frozen=True)
+class ReplaySuiteSensitivityResult:
+    baseline: str
+    variants: tuple[ReplaySuiteVariant, ...]
+    scenario_reports: tuple[tuple[str, SensitivityReport], ...]
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "baseline": self.baseline,
+            "variants": [
+                {
+                    "name": item.name,
+                    "coverage": item.result.to_dict()["coverage"],
+                }
+                for item in self.variants
+            ],
+            "scenarios": {
+                scenario_id: report.to_dict()
+                for scenario_id, report in self.scenario_reports
+            },
+            "selection_policy": (
+                "Sensitivity analysis is evidence only and never mutates the "
+                "frozen production configuration."
+            ),
         }
 
 
@@ -152,6 +190,47 @@ def write_replay_suite(
         json.dumps(result.to_dict(), ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
+
+
+def compare_replay_suites(
+    variants: tuple[ReplaySuiteVariant, ...],
+    *,
+    baseline: str,
+) -> ReplaySuiteSensitivityResult:
+    if len(variants) < 2:
+        raise ValueError("suite sensitivity requires at least two variants")
+    names = [item.name for item in variants]
+    if len(set(names)) != len(names):
+        raise ValueError("suite sensitivity variant names must be unique")
+    if baseline not in names:
+        raise ValueError("suite sensitivity baseline is missing")
+    indexed = []
+    for variant in variants:
+        scenarios = {
+            item.scenario_id: item for item in variant.result.scenarios
+        }
+        if set(scenarios) != REQUIRED_SCENARIOS:
+            raise ValueError(
+                f"variant {variant.name} lacks mandatory scenario coverage"
+            )
+        indexed.append((variant.name, scenarios))
+    reports = tuple(
+        (
+            scenario_id,
+            compare_sensitivity(
+                tuple(
+                    SensitivityVariant(
+                        variant_name,
+                        scenarios[scenario_id].replay.metrics,
+                    )
+                    for variant_name, scenarios in indexed
+                ),
+                baseline=baseline,
+            ),
+        )
+        for scenario_id in sorted(REQUIRED_SCENARIOS)
+    )
+    return ReplaySuiteSensitivityResult(baseline, variants, reports)
 
 
 def _relative_path(manifest: Path, raw: object) -> Path:

@@ -39,9 +39,13 @@ GUI 烟雾脚本兼容 PyInstaller 单文件模式的父进程与 GUI 子进程�
 .\scripts\build_windows_installer.ps1 -Version 0.1.0
 ```
 
+用户已于 2026-07-30 明确允许后续下载并执行 Inno Setup 6；实际下载安装与编译留待
+下一开发阶段执行并保留安装器哈希。
+
 安装器采用每用户目录 `%LOCALAPPDATA%\Programs\TradeHelper`，默认不要求管理员权限。
 卸载只移除程序文件和快捷方式，故意保留 `%LOCALAPPDATA%\TradeHelper` 中的个人数据库
-及安全备份。安装器同样生成独立 `.sha256` 文件。
+及安全备份。安装前会展示未签名测试版说明，安装完成后的启动选项默认不勾选，避免
+客户端突然出现。安装器同样生成独立 `.sha256` 文件。
 
 发布流程同时支持免安装 ZIP 和每用户安装器。首次正式发布前还需要完成：
 

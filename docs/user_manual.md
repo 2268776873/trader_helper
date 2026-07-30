@@ -31,7 +31,7 @@ Trade Helper 是 Windows 本地低频 ETF 仓位管理助手。它只生成可�
 交易日历判断是否开市：
 
 ```powershell
-.\scripts\register_daily_task.ps1 -Python C:\path\to\python.exe
+.\scripts\register_daily_task.ps1
 ```
 
 移除任务：

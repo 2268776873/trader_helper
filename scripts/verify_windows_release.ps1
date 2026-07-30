@@ -16,6 +16,7 @@ try {
         "/TradeHelper.exe",
         "/TradeHelperCLI.exe",
         "/release-manifest.json",
+        "/RELEASE_NOTES.md",
         "/docs/user_manual.md",
         "/docs/privacy_and_risk.md",
         "/docs/strategy_replay.md",
@@ -23,7 +24,11 @@ try {
         "/config/personal_v1.json",
         "/config/replay_initial_account.example.json",
         "/config/replay_suite.example.json",
-        "/templates/trade_helper_account_template.xlsx"
+        "/templates/trade_helper_account_template.xlsx",
+        "/scripts/register_daily_task.ps1",
+        "/scripts/run_daily_pipeline.ps1",
+        "/scripts/run_daily_decision.ps1",
+        "/scripts/unregister_daily_task.ps1"
     )
     foreach ($suffix in $requiredSuffixes) {
         if (-not ($entries | Where-Object { $_.EndsWith($suffix) })) {

@@ -44,3 +44,27 @@ python -m trade_helper.cli replay-suite .\config\replay_suite.example.json `
 - 金融危机覆盖 2007-10-09 至 2009-03-09，至少 300 个交易日；
 - 2022 下跌覆盖 2022-01-03 至 2022-12-30，至少 200 个交易日；
 - 长期上涨样本至少 500 个交易日。
+
+需要比较参数敏感性时，每个变体都必须重新执行完整四场景套件：
+
+```powershell
+.\TradeHelperCLI.exe strategy-sensitivity `
+  --variant baseline .\config\personal_v1.json .\config\replay_suite.json `
+  --variant lower-trigger .\config\sensitivity_lower.json .\config\replay_suite.json `
+  --baseline baseline `
+  --output .\var\strategy-sensitivity.json
+```
+
+输出保留每个场景的收益、回撤、波动、换手和现金指标。敏感性配置只用于研究，
+不会写入生产数据库，也不会替换冻结配置。
+
+## 成立前历史区间口径
+
+产品决策（2026-07-30）已确认采用双层回放：
+
+- 2000/2008 等 ETF 成立前区间使用可审计的指数总收益、人民币汇率等代理输入，
+  只验证资产配置、回撤档位和现金管理，并在报告中明确标记 `PROXY`；
+- 代理区间不伪造二级市场溢价，也不得宣称验证了 ETF 溢价卖出规则；
+- ETF 成立后的真实区间另行使用实际成交价、净值与溢价数据，验证执行和卖出规则。
+
+实现代理数据导入与报告标识时不得静默降级：缺少代理来源、转换公式或哈希时必须失败。

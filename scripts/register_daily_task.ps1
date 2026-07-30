@@ -1,8 +1,8 @@
 param(
-    [string]$Python = "python",
-    [string]$Database = ".\var\account.db",
+    [string]$CliExecutable = ".\TradeHelperCLI.exe",
+    [string]$Database = "",
     [string]$Config = ".\config\personal_v1.json",
-    [string]$Supplement = ".\var\today-market.json",
+    [string]$Supplement = "",
     [string]$TaskName = "TradeHelper-DailyDecision"
 )
 
@@ -15,21 +15,27 @@ function Resolve-ProjectPath([string]$Value) {
     }
     return [System.IO.Path]::GetFullPath((Join-Path $projectRoot $Value))
 }
-$databasePath = Resolve-ProjectPath $Database
-$configPath = Resolve-ProjectPath $Config
-$supplementPath = Resolve-ProjectPath $Supplement
-$pythonPath = if ([System.IO.Path]::IsPathRooted($Python)) {
-    $Python
+$databasePath = if ($Database) {
+    Resolve-ProjectPath $Database
+} else {
+    Join-Path $env:LOCALAPPDATA "TradeHelper\account.db"
 }
-else {
-    (Get-Command $Python -ErrorAction Stop).Source
+$configPath = Resolve-ProjectPath $Config
+$supplementPath = if ($Supplement) {
+    Resolve-ProjectPath $Supplement
+} else {
+    Join-Path $env:LOCALAPPDATA "TradeHelper\today-market.json"
+}
+$cliPath = Resolve-ProjectPath $CliExecutable
+if (-not (Test-Path -LiteralPath $cliPath -PathType Leaf)) {
+    throw "Trade Helper CLI not found: $cliPath"
 }
 
 $arguments = @(
     "-NoProfile",
     "-ExecutionPolicy", "Bypass",
     "-File", "`"$runner`"",
-    "-Python", "`"$pythonPath`"",
+    "-CliExecutable", "`"$cliPath`"",
     "-Database", "`"$databasePath`"",
     "-Config", "`"$configPath`"",
     "-Supplement", "`"$supplementPath`""

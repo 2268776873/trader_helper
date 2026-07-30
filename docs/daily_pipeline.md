@@ -11,19 +11,21 @@ A 股交易日历判断。流水线依次执行：
 准备文件：
 
 ```powershell
-Copy-Item .\config\market_supplement.example.json .\var\today-market.json
+New-Item -ItemType Directory -Force "$env:LOCALAPPDATA\TradeHelper"
+Copy-Item .\config\market_supplement.example.json `
+  "$env:LOCALAPPDATA\TradeHelper\today-market.json"
 ```
 
 每个交易日必须更新 `observed_at` 和实际来源值，不能直接复用示例值。注册任务：
 
 ```powershell
-.\scripts\register_daily_task.ps1 -Python C:\path\to\python.exe
+.\scripts\register_daily_task.ps1
 ```
 
 手工演练完整流水线：
 
 ```powershell
-.\scripts\run_daily_pipeline.ps1 -Python C:\path\to\python.exe
+.\scripts\run_daily_pipeline.ps1
 ```
 
 如果补充文件缺失、字段无效、任一标的未达到 READY 或决策检查失败，脚本返回非零

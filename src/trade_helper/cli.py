@@ -24,7 +24,12 @@ from trade_helper.strategy_replay import (
     run_strategy_replay,
     write_strategy_replay,
 )
-from trade_helper.replay_suite import run_replay_suite, write_replay_suite
+from trade_helper.replay_suite import (
+    ReplaySuiteVariant,
+    compare_replay_suites,
+    run_replay_suite,
+    write_replay_suite,
+)
 from trade_helper.release_readiness import build_release_readiness
 from trade_helper.doctor import run_doctor
 from trade_helper.config import load_strategy_config
@@ -136,6 +141,19 @@ def build_parser() -> argparse.ArgumentParser:
     readiness.add_argument("--replay-suite", type=Path, required=True)
     readiness.add_argument("--required-shadow-days", type=int, default=20)
     readiness.add_argument("--output", type=Path)
+    suite_sensitivity = subparsers.add_parser(
+        "strategy-sensitivity",
+        help="compare real strategy replay suites across config variants",
+    )
+    suite_sensitivity.add_argument(
+        "--variant",
+        nargs=3,
+        action="append",
+        metavar=("NAME", "CONFIG", "SUITE"),
+        required=True,
+    )
+    suite_sensitivity.add_argument("--baseline", required=True)
+    suite_sensitivity.add_argument("--output", type=Path, required=True)
     sensitivity = subparsers.add_parser(
         "sensitivity-report",
         help="compare complete replay metrics across parameter variants",
@@ -230,6 +248,26 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.output.write_text(rendered + "\n", encoding="utf-8")
         print(rendered)
         return 0 if result.automated_ready else 7
+    if args.command == "strategy-sensitivity":
+        variants = tuple(
+            ReplaySuiteVariant(
+                name,
+                run_replay_suite(
+                    Path(suite), load_strategy_config(Path(config))
+                ),
+            )
+            for name, config, suite in args.variant
+        )
+        result = compare_replay_suites(
+            variants, baseline=args.baseline
+        )
+        rendered = json.dumps(
+            result.to_dict(), ensure_ascii=False, indent=2
+        )
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(rendered + "\n", encoding="utf-8")
+        print(rendered)
+        return 0
     if args.command == "sensitivity-report":
         variants = tuple(
             SensitivityVariant(

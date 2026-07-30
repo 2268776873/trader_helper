@@ -40,6 +40,7 @@ try {
     New-Item -ItemType Directory -Path "$releaseRoot\docs" | Out-Null
     New-Item -ItemType Directory -Path "$releaseRoot\config" | Out-Null
     New-Item -ItemType Directory -Path "$releaseRoot\templates" | Out-Null
+    New-Item -ItemType Directory -Path "$releaseRoot\scripts" | Out-Null
     Copy-Item -LiteralPath $executablePath -Destination "$releaseRoot\TradeHelper.exe"
     Copy-Item -LiteralPath $cliExecutablePath -Destination "$releaseRoot\TradeHelperCLI.exe"
     Copy-Item -LiteralPath ".\docs\user_manual.md" -Destination "$releaseRoot\docs"
@@ -47,11 +48,16 @@ try {
     Copy-Item -LiteralPath ".\docs\client_backup_restore.md" -Destination "$releaseRoot\docs"
     Copy-Item -LiteralPath ".\docs\client_market_collection.md" -Destination "$releaseRoot\docs"
     Copy-Item -LiteralPath ".\docs\strategy_replay.md" -Destination "$releaseRoot\docs"
+    Copy-Item -LiteralPath ".\RELEASE_NOTES.md" -Destination "$releaseRoot"
     Copy-Item -LiteralPath ".\config\market_supplement.example.json" -Destination "$releaseRoot\config"
     Copy-Item -LiteralPath ".\config\personal_v1.json" -Destination "$releaseRoot\config"
     Copy-Item -LiteralPath ".\config\replay_initial_account.example.json" -Destination "$releaseRoot\config"
     Copy-Item -LiteralPath ".\config\replay_suite.example.json" -Destination "$releaseRoot\config"
     Copy-Item -LiteralPath ".\outputs\account_template\trade_helper_account_template.xlsx" -Destination "$releaseRoot\templates"
+    Copy-Item -LiteralPath ".\scripts\register_daily_task.ps1" -Destination "$releaseRoot\scripts"
+    Copy-Item -LiteralPath ".\scripts\run_daily_pipeline.ps1" -Destination "$releaseRoot\scripts"
+    Copy-Item -LiteralPath ".\scripts\run_daily_decision.ps1" -Destination "$releaseRoot\scripts"
+    Copy-Item -LiteralPath ".\scripts\unregister_daily_task.ps1" -Destination "$releaseRoot\scripts"
 
     $manifest = [ordered]@{
         product = "Trade Helper"

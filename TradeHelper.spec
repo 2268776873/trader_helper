@@ -30,6 +30,7 @@ exe = EXE(
     a.datas,
     [],
     name="TradeHelper",
+    version=str(root / "installer" / "windows_version_info.txt"),
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
