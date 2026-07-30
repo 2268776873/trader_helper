@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -73,3 +73,23 @@ class DailyDecisionServiceTests(TestCase):
             self.assertEqual(DecisionStatus.READY, outcome.status)
             self.assertEqual(1, ledger.count("decision_runs"))
             self.assertEqual(1, ledger.count("advice"))
+
+            stale_service = DailyDecisionService(ledger, config)
+            stale_request = stale_service.build_request(
+                decision_id="D-2",
+                now=now + timedelta(minutes=6),
+                a_share_trading_day_number=10,
+            )
+            self.assertTrue(
+                all(
+                    "market snapshot is stale at decision time" in market.reasons
+                    for market in stale_request.markets
+                )
+            )
+            stale_outcome = stale_service.execute(
+                decision_id="D-2",
+                now=now + timedelta(minutes=6),
+                a_share_trading_day_number=10,
+            )
+
+            self.assertEqual(DecisionStatus.BLOCKED, stale_outcome.status)

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from contextlib import closing
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 
 from trade_helper.config import StrategyConfig
@@ -117,6 +117,19 @@ class DailyDecisionService:
                 generated_at = datetime.fromisoformat(row["observed_at"])
                 payload = json.loads(row["payload_json"])
                 reasons.extend(json.loads(row["reasons_json"]))
+                maximum_age = timedelta(
+                    minutes=float(
+                        self.config.raw["data_quality"][
+                            "maximum_estimate_age_minutes"
+                        ]
+                    )
+                )
+                if (
+                    generated_at > now + timedelta(seconds=30)
+                    or now - generated_at > maximum_age
+                ):
+                    readiness = Readiness.BLOCKED
+                    reasons.append("market snapshot is stale at decision time")
             try:
                 drawdown = reference.drawdown(asset.asset_id, now.date()).drawdown
             except ValueError as error:
