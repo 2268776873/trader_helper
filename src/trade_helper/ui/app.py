@@ -1,11 +1,17 @@
 from __future__ import annotations
 
 import tkinter as tk
+import os
 from dataclasses import dataclass
 from decimal import Decimal
 from tkinter import ttk
 
 from trade_helper.ui.theme import COLORS, FONTS, status_color
+from trade_helper.ui.view_model import (
+    DashboardRepository,
+    DashboardViewModel,
+    empty_dashboard,
+)
 
 
 @dataclass(frozen=True)
@@ -21,8 +27,9 @@ class AssetView:
 
 
 class TradeHelperApp(tk.Tk):
-    def __init__(self) -> None:
+    def __init__(self, model: DashboardViewModel | None = None) -> None:
         super().__init__()
+        self.model = model or empty_dashboard()
         self.title("Trade Helper · Personal V1")
         self.geometry("1440x900")
         self.minsize(1180, 760)
@@ -117,7 +124,11 @@ class TradeHelperApp(tk.Tk):
             fg=COLORS["text"], bg=COLORS["window"],
         ).pack(anchor="w", pady=(19, 0))
         tk.Label(
-            title, text="2026-07-30  ·  下一次决策 14:00",
+            title,
+            text=(
+                f"最近决策 {self.model.latest_decision_at:%Y-%m-%d %H:%M}"
+                if self.model.latest_decision_at else "尚无决策记录 · 下一次决策 14:00"
+            ),
             font=FONTS["small"], fg=COLORS["muted"], bg=COLORS["window"],
         ).pack(anchor="w")
         status = tk.Frame(
@@ -126,11 +137,18 @@ class TradeHelperApp(tk.Tk):
         )
         status.pack(side="right", pady=25)
         tk.Label(
-            status, text="●", fg=status_color("READY"), bg=COLORS["surface"],
+            status, text="●", fg=status_color(self.model.data_status.value),
+            bg=COLORS["surface"],
             font=("Segoe UI", 10),
         ).pack(side="left", padx=(14, 6), pady=8)
         tk.Label(
-            status, text="数据就绪", fg=COLORS["text"], bg=COLORS["surface"],
+            status,
+            text={
+                "READY": "数据就绪",
+                "REVIEW": "需要复核",
+                "BLOCKED": "数据阻断",
+            }[self.model.data_status.value],
+            fg=COLORS["text"], bg=COLORS["surface"],
             font=FONTS["small"],
         ).pack(side="left", padx=(0, 14))
 
@@ -151,12 +169,15 @@ class TradeHelperApp(tk.Tk):
         canvas.grid(row=1, column=0, sticky="nsew")
         scrollbar.grid(row=1, column=1, sticky="ns")
         body.grid_columnconfigure((0, 1, 2, 3), weight=1, uniform="metric")
+        account_state = (
+            "已对账" if self.model.reconciliation_status == "RECONCILED" else "待对账"
+        )
         for index, values in enumerate(
             (
-                ("总资产", "¥500,000", "+0.00%", COLORS["cyan"]),
-                ("策略现金", "¥350,000", "安全线 ¥50,000", COLORS["green"]),
-                ("今日可买", "¥20,000", "总资产 4%", COLORS["blue"]),
-                ("账户状态", "已对账", "14:00 已确认", COLORS["green"]),
+                ("总资产", self._money(self.model.total_assets_cny), "来自最新账户快照", COLORS["cyan"]),
+                ("策略现金", self._money(self.model.cash_cny), f"安全线 {self._money(self.model.cash_floor_cny)}", COLORS["green"]),
+                ("今日可买", self._money(self.model.today_buy_limit_cny), "受现金与单日上限约束", COLORS["blue"]),
+                ("账户状态", account_state, self.model.reconciliation_status, status_color(self.model.reconciliation_status)),
             )
         ):
             self._metric_card(body, index, *values)
@@ -167,10 +188,18 @@ class TradeHelperApp(tk.Tk):
             asset_section, text="资产雷达", font=FONTS["title"],
             fg=COLORS["text"], bg=COLORS["window"],
         ).grid(row=0, column=0, columnspan=3, sticky="w", pady=(12, 14))
-        assets = (
-            AssetView("标普 500", "513500", Decimal("0.12"), Decimal("0.40"), Decimal("0.0932"), Decimal("0.006"), "SP_L1 · 观察", COLORS["cyan"]),
-            AssetView("纳指 100", "513100", Decimal("0.12"), Decimal("0.25"), Decimal("0.0710"), Decimal("0.009"), "ARMED", COLORS["blue"]),
-            AssetView("红利低波", "515450", Decimal("0.06"), Decimal("0.25"), Decimal("0.0542"), Decimal("0.003"), "DV_L1 · 触发", COLORS["green"]),
+        accent_by_asset = {
+            "SP500": COLORS["cyan"],
+            "NASDAQ": COLORS["blue"],
+            "DIVIDEND": COLORS["green"],
+        }
+        assets = tuple(
+            AssetView(
+                item.name, item.code, item.weight, item.target_weight,
+                item.drawdown or Decimal("0"), item.premium or Decimal("0"),
+                item.state, accent_by_asset.get(item.asset_id, COLORS["cyan"]),
+            )
+            for item in self.model.assets
         )
         for index, asset in enumerate(assets):
             self._asset_card(asset_section, index, asset)
@@ -230,7 +259,11 @@ class TradeHelperApp(tk.Tk):
         card = self._card(parent)
         card.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
         tk.Label(card, text="今日决策", font=FONTS["title"], fg=COLORS["text"], bg=COLORS["surface"]).pack(anchor="w", padx=20, pady=(18, 4))
-        tk.Label(card, text="等待 14:00 数据确认后生成", font=FONTS["small"], fg=COLORS["muted"], bg=COLORS["surface"]).pack(anchor="w", padx=20)
+        decision_copy = (
+            f"最近状态：{self.model.latest_decision_status}"
+            if self.model.latest_decision_status else "等待 14:00 数据确认后生成"
+        )
+        tk.Label(card, text=decision_copy, font=FONTS["small"], fg=COLORS["muted"], bg=COLORS["surface"]).pack(anchor="w", padx=20)
         line = tk.Frame(card, bg=COLORS["cyan_dim"], highlightthickness=1, highlightbackground=COLORS["cyan"])
         line.pack(fill="x", padx=20, pady=18)
         tk.Label(line, text="◇", font=("Segoe UI Symbol", 22), fg=COLORS["cyan"], bg=COLORS["cyan_dim"]).pack(side="left", padx=16, pady=14)
@@ -248,22 +281,25 @@ class TradeHelperApp(tk.Tk):
         card = self._card(parent)
         card.grid(row=0, column=1, sticky="nsew", padx=(8, 0))
         tk.Label(card, text="虚拟资金池", font=FONTS["title"], fg=COLORS["text"], bg=COLORS["surface"]).pack(anchor="w", padx=20, pady=(18, 14))
-        for label, value, color in (
-            ("基础建仓", "¥125,000", COLORS["cyan"]),
-            ("标普回撤", "¥80,000", COLORS["blue"]),
-            ("纳指回撤", "¥45,000", "#A079FF"),
-            ("红利回撤", "¥50,000", COLORS["green"]),
-            ("战略现金", "¥50,000", COLORS["yellow"]),
-        ):
+        pool_colors = (
+            COLORS["cyan"], COLORS["blue"], "#A079FF",
+            COLORS["green"], COLORS["yellow"],
+        )
+        for (label, value), color in zip(self.model.cash_pools, pool_colors):
             row = tk.Frame(card, bg=COLORS["surface"])
             row.pack(fill="x", padx=20, pady=5)
             tk.Label(row, text="●", fg=color, bg=COLORS["surface"]).pack(side="left")
             tk.Label(row, text=label, font=FONTS["small"], fg=COLORS["muted"], bg=COLORS["surface"]).pack(side="left", padx=8)
-            tk.Label(row, text=value, font=FONTS["mono"], fg=COLORS["text"], bg=COLORS["surface"]).pack(side="right")
+            tk.Label(row, text=self._money(value), font=FONTS["mono"], fg=COLORS["text"], bg=COLORS["surface"]).pack(side="right")
+
+    @staticmethod
+    def _money(value: Decimal) -> str:
+        return f"¥{value:,.0f}"
 
 
 def main() -> int:
-    app = TradeHelperApp()
+    database = os.environ.get("TRADE_HELPER_DB", "var/account.db")
+    app = TradeHelperApp(DashboardRepository(database).load())
     app.mainloop()
     return 0
 
