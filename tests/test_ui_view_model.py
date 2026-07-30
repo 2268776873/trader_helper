@@ -6,7 +6,7 @@ from unittest import TestCase
 
 from trade_helper.config import load_strategy_config
 from trade_helper.ledger import AccountSnapshot, CashFlow, Ledger, PositionSnapshot
-from trade_helper.execution import Advice, ExecutionLedger
+from trade_helper.execution import Advice, ExecutionLedger, Fill
 from trade_helper.models import Readiness
 from trade_helper.market_data import (
     MarketDataStore, Observation, ObservationKind, aggregate_market_data,
@@ -52,6 +52,13 @@ class DashboardRepositoryTests(TestCase):
                     Decimal("2.000"), "test",
                 )
             )
+            ExecutionLedger(ledger).record_fill(
+                Fill(
+                    "FILL-1", "ADV-1",
+                    datetime(2026, 7, 30, 0, 1, tzinfo=timezone.utc),
+                    400, Decimal("2"),
+                )
+            )
             ledger.add_cash_flow(
                 CashFlow(
                     "FLOW-1", datetime(2026, 7, 29, tzinfo=timezone.utc),
@@ -82,13 +89,14 @@ class DashboardRepositoryTests(TestCase):
 
         self.assertTrue(model.has_account)
         self.assertEqual(Decimal("500000"), model.total_assets_cny)
-        self.assertEqual(Decimal("350000"), model.cash_cny)
-        self.assertEqual(Decimal("0.12"), model.assets[0].weight)
+        self.assertEqual(Decimal("349200"), model.cash_cny)
+        self.assertEqual(Decimal("0.1216"), model.assets[0].weight)
         self.assertEqual(Decimal("350000"), sum(value for _, value in model.cash_pools))
         self.assertEqual("ADV-1", model.open_advices[0].advice_id)
-        self.assertEqual(0, model.open_advices[0].filled_quantity)
-        self.assertEqual("资金", history[0].category)
-        self.assertIn("16,000.00", history[0].summary)
+        self.assertEqual(400, model.open_advices[0].filled_quantity)
+        cash_record = next(item for item in history if item.category == "资金")
+        self.assertIn("16,000.00", cash_record.summary)
+        self.assertTrue(any(item.category == "成交" for item in history))
         self.assertEqual(("q1", "q2"), details[0].quote_sources)
         self.assertEqual(("v1", "v2"), details[0].valuation_sources)
         self.assertTrue(versions[0].is_runtime)

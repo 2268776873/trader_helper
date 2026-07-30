@@ -176,9 +176,39 @@ class DashboardRepository:
                 ORDER BY a.created_at DESC, a.advice_id DESC
                 """
             ).fetchall()
+            trade_rows = connection.execute(
+                """
+                SELECT trade_time, asset_id, side, quantity, price_milli
+                FROM trades WHERE status = 'FILLED' AND trade_time > ?
+                ORDER BY trade_time, trade_id
+                """,
+                (snapshot["as_of"],),
+            ).fetchall()
 
         total = Decimal(snapshot["total_assets_fen"]) / 100
-        cash = Decimal(snapshot["available_cash_fen"]) / 100
+        cash = (
+            Decimal(snapshot["available_cash_fen"])
+            + Decimal(snapshot["frozen_cash_fen"])
+        ) / 100
+        values_by_asset = {
+            str(position["asset_id"]):
+            Decimal(position["broker_market_value_fen"] or 0) / 100
+            for position in positions
+        }
+        for trade in trade_rows:
+            gross = (
+                Decimal(trade["quantity"])
+                * Decimal(trade["price_milli"])
+                / Decimal("1000")
+            )
+            asset_id = str(trade["asset_id"])
+            values_by_asset.setdefault(asset_id, Decimal("0"))
+            if trade["side"] == "BUY":
+                cash -= gross
+                values_by_asset[asset_id] += gross
+            else:
+                cash += gross
+                values_by_asset[asset_id] -= gross
         raw_config = json.loads(config["content_json"]) if config else {}
         config_assets = {
             item["asset_id"]: item for item in raw_config.get("assets", [])
@@ -191,7 +221,7 @@ class DashboardRepository:
         for position in positions:
             asset_id = str(position["asset_id"])
             item_config = config_assets.get(asset_id, {})
-            value = Decimal(position["broker_market_value_fen"] or 0) / 100
+            value = values_by_asset[asset_id]
             market = market_by_symbol.get(str(position["etf_code"]))
             payload = json.loads(market["payload_json"]) if market else {}
             ask = payload.get("selected_ask")
@@ -245,9 +275,15 @@ class DashboardRepository:
         daily_ratio = Decimal(
             str(raw_config.get("execution", {}).get("daily_buy_limit_ratio", "0.04"))
         )
+        reconciled = (
+            cash >= 0
+            and all(value >= 0 for value in values_by_asset.values())
+            and cash + sum(values_by_asset.values(), start=Decimal("0")) == total
+        )
         return DashboardViewModel(
             True, total, cash, cash_floor, total * daily_ratio,
-            "RECONCILED", data_status,
+            "RECONCILED" if reconciled else "RECONCILIATION_REQUIRED",
+            data_status,
             datetime.fromisoformat(decision["generated_at"]) if decision else None,
             str(decision["status"]) if decision else None,
             tuple(assets), pools,

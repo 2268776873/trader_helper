@@ -68,9 +68,13 @@ class DailyDecisionService:
                 """
             ).fetchall()
             trade_rows = connection.execute(
-                "SELECT trade_time, side, quantity, price_milli FROM trades"
+                """
+                SELECT trade_time, asset_id, side, quantity, price_milli
+                FROM trades WHERE status = 'FILLED'
+                """
             ).fetchall()
         total = Decimal(snapshot["total_assets_fen"]) / 100
+        snapshot_at = datetime.fromisoformat(snapshot["as_of"])
         cash = (
             Decimal(snapshot["available_cash_fen"])
             + Decimal(snapshot["frozen_cash_fen"])
@@ -79,7 +83,29 @@ class DailyDecisionService:
             row["asset_id"]: Decimal(row["broker_market_value_fen"] or 0) / 100
             for row in positions
         }
-        reconciled = cash + sum(values.values(), start=Decimal("0")) == total
+        for row in trade_rows:
+            trade_time = datetime.fromisoformat(row["trade_time"])
+            if trade_time <= snapshot_at:
+                continue
+            gross = (
+                Decimal(row["quantity"])
+                * Decimal(row["price_milli"])
+                / Decimal("1000")
+            )
+            asset_id = str(row["asset_id"])
+            values.setdefault(asset_id, Decimal("0"))
+            if row["side"] == "BUY":
+                cash -= gross
+                values[asset_id] += gross
+            else:
+                cash += gross
+                values[asset_id] -= gross
+        reconstructed = cash + sum(values.values(), start=Decimal("0"))
+        reconciled = (
+            cash >= 0
+            and all(value >= 0 for value in values.values())
+            and reconstructed == total
+        )
         today_buy = sum(
             (
                 Decimal(row["quantity"]) * Decimal(row["price_milli"]) / 1000

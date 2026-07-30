@@ -8,6 +8,7 @@ from zoneinfo import ZoneInfo
 from trade_helper.config import load_strategy_config
 from trade_helper.decision import DecisionStatus
 from trade_helper.decision_service import DailyDecisionService
+from trade_helper.execution import ExecutionLedger, Fill
 from trade_helper.ledger import AccountSnapshot, Ledger, PositionSnapshot
 from trade_helper.market_data import (
     MarketDataStore, Observation, ObservationKind, aggregate_market_data,
@@ -73,6 +74,44 @@ class DailyDecisionServiceTests(TestCase):
             self.assertEqual(DecisionStatus.READY, outcome.status)
             self.assertEqual(1, ledger.count("decision_runs"))
             self.assertEqual(1, ledger.count("advice"))
+
+            advice = next(
+                item for item in outcome.advices if item.action == "BUY"
+            )
+            connection = ledger.connect()
+            try:
+                advice_id = connection.execute(
+                    "SELECT advice_id FROM advice"
+                ).fetchone()["advice_id"]
+            finally:
+                connection.close()
+            fill_quantity = min(100, advice.quantity)
+            fill_value = Decimal(fill_quantity) * advice.limit_price
+            ExecutionLedger(ledger).record_fill(
+                Fill(
+                    "FILL-1", advice_id, now + timedelta(seconds=30),
+                    fill_quantity, advice.limit_price,
+                )
+            )
+            projected = DailyDecisionService(ledger, config).build_request(
+                decision_id="D-PROJECTED",
+                now=now + timedelta(minutes=1),
+                a_share_trading_day_number=10,
+            )
+            self.assertTrue(projected.reconciled)
+            self.assertEqual(
+                Decimal("350000") - fill_value,
+                projected.base_input.cash_cny,
+            )
+            projected_candidate = next(
+                item
+                for item in projected.base_input.candidates
+                if item.asset_id == advice.asset_id
+            )
+            self.assertEqual(
+                Decimal("60000") + fill_value,
+                projected_candidate.position_value_cny,
+            )
 
             stale_service = DailyDecisionService(ledger, config)
             stale_request = stale_service.build_request(
