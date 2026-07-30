@@ -40,6 +40,67 @@ class ReplayMetrics:
         return payload
 
 
+@dataclass(frozen=True)
+class SensitivityVariant:
+    name: str
+    metrics: ReplayMetrics
+
+
+@dataclass(frozen=True)
+class SensitivityReport:
+    baseline: str
+    variants: tuple[SensitivityVariant, ...]
+    annualized_return_range: Decimal
+    maximum_drawdown_range: Decimal
+    turnover_range: Decimal
+    cash_usage_range: Decimal
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "baseline": self.baseline,
+            "variants": [
+                {"name": item.name, "metrics": item.metrics.to_dict()}
+                for item in self.variants
+            ],
+            "ranges": {
+                "annualized_return": str(self.annualized_return_range),
+                "maximum_drawdown": str(self.maximum_drawdown_range),
+                "turnover": str(self.turnover_range),
+                "cash_usage": str(self.cash_usage_range),
+            },
+            "selection_policy": (
+                "Do not select parameters by return alone; review drawdown, "
+                "volatility, turnover and cash usage together."
+            ),
+        }
+
+
+def compare_sensitivity(
+    variants: tuple[SensitivityVariant, ...],
+    *,
+    baseline: str,
+) -> SensitivityReport:
+    if len(variants) < 2:
+        raise ValueError("sensitivity report requires at least two variants")
+    names = [item.name for item in variants]
+    if len(set(names)) != len(names):
+        raise ValueError("variant names must be unique")
+    if baseline not in names:
+        raise ValueError("baseline variant is missing")
+
+    def spread(values: list[Decimal]) -> Decimal:
+        return max(values) - min(values)
+
+    return SensitivityReport(
+        baseline,
+        variants,
+        spread([item.metrics.annualized_return for item in variants]),
+        spread([item.metrics.maximum_drawdown for item in variants]),
+        spread([item.metrics.turnover_ratio for item in variants]),
+        spread([item.metrics.average_cash_ratio for item in variants]),
+    )
+
+
 def calculate_replay_metrics(
     points: tuple[ReplayPoint, ...],
 ) -> ReplayMetrics:

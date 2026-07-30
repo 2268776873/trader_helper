@@ -61,6 +61,12 @@ python -m trade_helper.cli shadow-report --database .\var\account.db --output .\
 python -m trade_helper.cli replay-report .\var\replay.csv --output .\var\replay-report.json
 ```
 
+多个回放结果可生成参数敏感性报告；输入文件名（不含扩展名）作为方案名：
+
+```powershell
+python -m trade_helper.cli sensitivity-report .\var\personal-v1.csv .\var\variant-a.csv --baseline personal-v1 --output .\var\sensitivity.json
+```
+
 运行发布与本地数据自检：
 
 ```powershell

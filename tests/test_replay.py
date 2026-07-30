@@ -2,7 +2,10 @@ from datetime import date
 from decimal import Decimal
 from unittest import TestCase
 
-from trade_helper.replay import ReplayPoint, calculate_replay_metrics
+from trade_helper.replay import (
+    ReplayPoint, SensitivityVariant, calculate_replay_metrics,
+    compare_sensitivity,
+)
 
 
 class ReplayMetricsTests(TestCase):
@@ -34,3 +37,29 @@ class ReplayMetricsTests(TestCase):
                     ReplayPoint(date(2026, 1, 1), Decimal("101"), Decimal("20")),
                 )
             )
+
+    def test_sensitivity_keeps_full_metrics_and_requires_baseline(self) -> None:
+        first = calculate_replay_metrics(
+            (
+                ReplayPoint(date(2026, 1, 1), Decimal("100"), Decimal("20")),
+                ReplayPoint(date(2026, 1, 2), Decimal("101"), Decimal("19")),
+            )
+        )
+        second = calculate_replay_metrics(
+            (
+                ReplayPoint(date(2026, 1, 1), Decimal("100"), Decimal("30")),
+                ReplayPoint(
+                    date(2026, 1, 2), Decimal("99"), Decimal("28"), Decimal("5")
+                ),
+            )
+        )
+        report = compare_sensitivity(
+            (
+                SensitivityVariant("personal-v1", first),
+                SensitivityVariant("variant-a", second),
+            ),
+            baseline="personal-v1",
+        )
+        self.assertEqual("personal-v1", report.baseline)
+        self.assertGreater(report.annualized_return_range, 0)
+        self.assertIn("maximum_drawdown", report.to_dict()["ranges"])

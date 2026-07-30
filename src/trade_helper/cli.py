@@ -14,7 +14,7 @@ from trade_helper.ledger import Ledger, LedgerConflict
 from trade_helper.backup import BackupError, create_backup, restore_backup
 from trade_helper.shadow_run import build_shadow_report, write_shadow_report
 from trade_helper.replay import (
-    calculate_replay_metrics,
+    SensitivityVariant, calculate_replay_metrics, compare_sensitivity,
     load_replay_csv,
     write_replay_report,
 )
@@ -93,6 +93,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     replay.add_argument("input", type=Path)
     replay.add_argument("--output", type=Path)
+    sensitivity = subparsers.add_parser(
+        "sensitivity-report",
+        help="compare complete replay metrics across parameter variants",
+    )
+    sensitivity.add_argument("inputs", type=Path, nargs="+")
+    sensitivity.add_argument("--baseline", required=True)
+    sensitivity.add_argument("--output", type=Path)
     doctor = subparsers.add_parser(
         "doctor", help="run local release and data readiness checks"
     )
@@ -140,6 +147,21 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.output:
             write_replay_report(metrics, args.output)
         print(json.dumps(metrics.to_dict(), ensure_ascii=False, indent=2))
+        return 0
+    if args.command == "sensitivity-report":
+        variants = tuple(
+            SensitivityVariant(
+                item.stem,
+                calculate_replay_metrics(load_replay_csv(item)),
+            )
+            for item in args.inputs
+        )
+        report = compare_sensitivity(variants, baseline=args.baseline)
+        rendered = json.dumps(report.to_dict(), ensure_ascii=False, indent=2)
+        if args.output:
+            args.output.parent.mkdir(parents=True, exist_ok=True)
+            args.output.write_text(rendered + "\n", encoding="utf-8")
+        print(rendered)
         return 0
     if args.command == "doctor":
         report = run_doctor(args.database, args.config)
