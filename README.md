@@ -61,6 +61,12 @@ python -m trade_helper.cli shadow-report --database .\var\account.db --output .\
 python -m trade_helper.cli replay-report .\var\replay.csv --output .\var\replay-report.json
 ```
 
+运行发布与本地数据自检：
+
+```powershell
+python -m trade_helper.cli doctor --database .\var\account.db
+```
+
 也可以使用 Windows 脚本，并在未配置 PATH 时传入 Python 完整路径：
 
 ```powershell

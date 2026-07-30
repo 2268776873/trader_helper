@@ -17,6 +17,7 @@ from trade_helper.replay import (
     load_replay_csv,
     write_replay_report,
 )
+from trade_helper.doctor import run_doctor
 from trade_helper.models import ProbeResult, Readiness
 from trade_helper.providers.sina import SinaError, SinaEtfProvider
 
@@ -84,6 +85,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     replay.add_argument("input", type=Path)
     replay.add_argument("--output", type=Path)
+    doctor = subparsers.add_parser(
+        "doctor", help="run local release and data readiness checks"
+    )
+    doctor.add_argument("--database", type=Path, required=True)
+    doctor.add_argument(
+        "--config", type=Path, default=Path("config/personal_v1.json")
+    )
     return parser
 
 
@@ -103,6 +111,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             write_replay_report(metrics, args.output)
         print(json.dumps(metrics.to_dict(), ensure_ascii=False, indent=2))
         return 0
+    if args.command == "doctor":
+        report = run_doctor(args.database, args.config)
+        print(json.dumps(report.to_dict(), ensure_ascii=False, indent=2))
+        return 0 if report.ready else 6
 
     if args.command in {"backup", "restore"}:
         try:
