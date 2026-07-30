@@ -117,6 +117,10 @@ class TradeHelperApp(tk.Tk):
                 for widget in (item, *item.winfo_children()):
                     widget.configure(cursor="hand2")
                     widget.bind("<Button-1>", lambda _: self._open_history())
+            if label == "数据中心":
+                for widget in (item, *item.winfo_children()):
+                    widget.configure(cursor="hand2")
+                    widget.bind("<Button-1>", lambda _: self._open_data_center())
         footer = tk.Frame(sidebar, bg=COLORS["sidebar"])
         footer.pack(side="bottom", fill="x", padx=22, pady=24)
         tk.Label(
@@ -566,6 +570,71 @@ class TradeHelperApp(tk.Tk):
             "账户快照已保存", f"快照 ID：{snapshot_id}", parent=self
         )
         self._reload_dashboard()
+
+    def _open_data_center(self) -> None:
+        window = tk.Toplevel(self)
+        window.title("Trade Helper · 数据中心")
+        window.geometry("1180x680")
+        window.configure(bg=COLORS["window"])
+        tk.Label(
+            window, text="数据中心", font=FONTS["hero"],
+            fg=COLORS["text"], bg=COLORS["window"],
+        ).pack(anchor="w", padx=28, pady=(24, 4))
+        tk.Label(
+            window,
+            text="最新多源快照、来源覆盖和阻断原因",
+            font=FONTS["small"], fg=COLORS["muted"], bg=COLORS["window"],
+        ).pack(anchor="w", padx=28, pady=(0, 18))
+        style = ttk.Style(window)
+        style.configure(
+            "Audit.Treeview",
+            background=COLORS["surface"], fieldbackground=COLORS["surface"],
+            foreground=COLORS["text"], rowheight=34, borderwidth=0,
+            font=FONTS["small"],
+        )
+        style.configure(
+            "Audit.Treeview.Heading",
+            background=COLORS["surface_hover"], foreground=COLORS["cyan"],
+            relief="flat", font=FONTS["small"],
+        )
+        frame = tk.Frame(window, bg=COLORS["window"])
+        frame.pack(fill="both", expand=True, padx=28, pady=(0, 28))
+        columns = (
+            "symbol", "time", "status", "quotes", "valuations",
+            "others", "reasons",
+        )
+        tree = ttk.Treeview(
+            frame, columns=columns, show="headings", style="Audit.Treeview"
+        )
+        definitions = (
+            ("symbol", "ETF", 80),
+            ("time", "快照时间", 165),
+            ("status", "状态", 90),
+            ("quotes", "行情源", 150),
+            ("valuations", "估值源", 150),
+            ("others", "其他来源", 230),
+            ("reasons", "阻断原因", 300),
+        )
+        for column, label, width in definitions:
+            tree.heading(column, text=label)
+            tree.column(column, width=width, minwidth=60)
+        scrollbar = ttk.Scrollbar(frame, orient="vertical", command=tree.yview)
+        tree.configure(yscrollcommand=scrollbar.set)
+        tree.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        for detail in DashboardRepository(self.database).load_market_details():
+            tree.insert(
+                "", "end",
+                values=(
+                    detail.symbol,
+                    detail.observed_at.strftime("%Y-%m-%d %H:%M:%S"),
+                    detail.readiness,
+                    ", ".join(detail.quote_sources) or "缺失",
+                    ", ".join(detail.valuation_sources) or "缺失",
+                    ", ".join(detail.other_sources) or "缺失",
+                    "；".join(detail.reasons) or "无",
+                ),
+            )
 
 
 def main() -> int:

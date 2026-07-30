@@ -48,6 +48,17 @@ class HistoryRecord:
 
 
 @dataclass(frozen=True)
+class MarketDetail:
+    symbol: str
+    observed_at: datetime
+    readiness: str
+    quote_sources: tuple[str, ...]
+    valuation_sources: tuple[str, ...]
+    other_sources: tuple[str, ...]
+    reasons: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class DashboardViewModel:
     has_account: bool
     total_assets_cny: Decimal
@@ -302,3 +313,61 @@ class DashboardRepository:
         )
         records.sort(key=lambda item: item.occurred_at, reverse=True)
         return tuple(records[:limit])
+
+    def load_market_details(self) -> tuple[MarketDetail, ...]:
+        if not self.database.exists():
+            return ()
+        ledger = Ledger(self.database)
+        ledger.initialize()
+        with closing(ledger.connect()) as connection:
+            rows = connection.execute(
+                """
+                SELECT m.* FROM market_snapshots m
+                JOIN (
+                    SELECT symbol, MAX(observed_at) AS observed_at
+                    FROM market_snapshots GROUP BY symbol
+                ) latest
+                ON latest.symbol = m.symbol
+                AND latest.observed_at = m.observed_at
+                ORDER BY m.symbol
+                """
+            ).fetchall()
+        details = []
+        for row in rows:
+            payload = json.loads(row["payload_json"])
+            observations = payload.get("observations", [])
+            details.append(
+                MarketDetail(
+                    row["symbol"],
+                    datetime.fromisoformat(row["observed_at"]),
+                    row["readiness"],
+                    tuple(
+                        sorted(
+                            {
+                                str(item["source"])
+                                for item in payload.get("quotes", [])
+                            }
+                        )
+                    ),
+                    tuple(
+                        sorted(
+                            {
+                                str(item["source"])
+                                for item in observations
+                                if item.get("kind") == "VALUATION"
+                            }
+                        )
+                    ),
+                    tuple(
+                        sorted(
+                            {
+                                f"{item.get('kind')}:{item.get('source')}"
+                                for item in observations
+                                if item.get("kind") != "VALUATION"
+                            }
+                        )
+                    ),
+                    tuple(json.loads(row["reasons_json"])),
+                )
+            )
+        return tuple(details)

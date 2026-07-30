@@ -8,6 +8,10 @@ from trade_helper.config import load_strategy_config
 from trade_helper.ledger import AccountSnapshot, CashFlow, Ledger, PositionSnapshot
 from trade_helper.execution import Advice, ExecutionLedger
 from trade_helper.models import Readiness
+from trade_helper.market_data import (
+    MarketDataStore, Observation, ObservationKind, aggregate_market_data,
+)
+from trade_helper.models import Quote
 from trade_helper.state_store import StrategyStateStore
 from trade_helper.ui.view_model import DashboardRepository
 
@@ -54,9 +58,26 @@ class DashboardRepositoryTests(TestCase):
                     "DEPOSIT", Decimal("16000"),
                 )
             )
+            market_now = datetime(2026, 7, 30, 6, 0, tzinfo=timezone.utc)
+            MarketDataStore(ledger).save(
+                aggregate_market_data(
+                    snapshot_id="M-1", symbol="513500", now=market_now,
+                    quotes=(
+                        Quote("513500", "SP", market_now, 2, 2, 2, None, "q1"),
+                        Quote("513500", "SP", market_now, 2, 2, 2, None, "q2"),
+                    ),
+                    observations=(
+                        Observation(ObservationKind.VALUATION, "v1", market_now, Decimal("2")),
+                        Observation(ObservationKind.VALUATION, "v2", market_now, Decimal("2")),
+                        Observation(ObservationKind.INDEX, "i1", market_now, Decimal("100")),
+                        Observation(ObservationKind.FX, "f1", market_now, Decimal("7")),
+                    ),
+                )
+            )
 
             model = DashboardRepository(database).load()
             history = DashboardRepository(database).load_history()
+            details = DashboardRepository(database).load_market_details()
 
         self.assertTrue(model.has_account)
         self.assertEqual(Decimal("500000"), model.total_assets_cny)
@@ -67,3 +88,5 @@ class DashboardRepositoryTests(TestCase):
         self.assertEqual(0, model.open_advices[0].filled_quantity)
         self.assertEqual("资金", history[0].category)
         self.assertIn("16,000.00", history[0].summary)
+        self.assertEqual(("q1", "q2"), details[0].quote_sources)
+        self.assertEqual(("v1", "v2"), details[0].valuation_sources)
