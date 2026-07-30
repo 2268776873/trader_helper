@@ -237,6 +237,15 @@ class Ledger:
                     output_json TEXT NOT NULL,
                     FOREIGN KEY(config_version) REFERENCES config_versions(config_version)
                 );
+
+                CREATE TABLE IF NOT EXISTS reference_series (
+                    asset_id TEXT NOT NULL,
+                    trading_date TEXT NOT NULL,
+                    value_micro INTEGER NOT NULL CHECK(value_micro > 0),
+                    source TEXT NOT NULL,
+                    observed_at TEXT NOT NULL,
+                    PRIMARY KEY(asset_id, trading_date, source)
+                );
                     """
                 )
 
@@ -484,6 +493,7 @@ class Ledger:
             "tactical_level_state",
             "market_snapshots",
             "decision_runs",
+            "reference_series",
         }
         if table not in allowed:
             raise ValueError("unsupported table")
