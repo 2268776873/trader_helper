@@ -77,10 +77,13 @@ class DecisionTests(TestCase):
     def test_monthly_release_and_audit_are_persisted(self) -> None:
         request = self.request()
         result = run_daily_decision(self.config, self.runtime, request)
-        DecisionStore(self.ledger).save(result, request, self.states)
+        DecisionStore(self.ledger).save(
+            result, request, self.states, self.config
+        )
 
         self.assertEqual(Decimal("12500"), self.states.load_runtime().base_budget.available_cny)
         self.assertEqual(1, self.ledger.count("decision_runs"))
+        self.assertEqual(1, self.ledger.count("advice"))
 
     def test_market_block_precedes_strategy(self) -> None:
         request = self.request()

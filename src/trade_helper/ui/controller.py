@@ -1,8 +1,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
+from decimal import Decimal
 from pathlib import Path
+from uuid import uuid4
 
+from trade_helper.execution import (
+    AdviceStatus,
+    ExecutionLedger,
+    Fill,
+    OrderAttempt,
+)
 from trade_helper.excel_import import ImportIssue, commit_preview, preview_workbook
 from trade_helper.ledger import Ledger, LedgerConflict
 
@@ -52,4 +61,49 @@ class DesktopController:
             ImportResult(True, False, "账户数据已原子写入")
             if imported
             else ImportResult(False, True, "相同内容已经导入，本次未重复写入")
+        )
+
+    def record_attempt(
+        self,
+        advice_id: str,
+        status: AdviceStatus,
+        *,
+        broker_order_id: str | None = None,
+        notes: str = "",
+        occurred_at: datetime | None = None,
+    ) -> AdviceStatus:
+        ledger = Ledger(self.database)
+        ledger.initialize()
+        ExecutionLedger(ledger).record_attempt(
+            OrderAttempt(
+                f"ATT-{uuid4().hex}",
+                advice_id,
+                occurred_at or datetime.now().astimezone(),
+                status,
+                broker_order_id,
+                notes,
+            )
+        )
+        return status
+
+    def record_fill(
+        self,
+        advice_id: str,
+        quantity: int,
+        price: Decimal,
+        *,
+        attempt_id: str | None = None,
+        occurred_at: datetime | None = None,
+    ) -> AdviceStatus:
+        ledger = Ledger(self.database)
+        ledger.initialize()
+        return ExecutionLedger(ledger).record_fill(
+            Fill(
+                f"FILL-{uuid4().hex}",
+                advice_id,
+                occurred_at or datetime.now().astimezone(),
+                quantity,
+                price,
+                attempt_id,
+            )
         )

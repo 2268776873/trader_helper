@@ -1,10 +1,13 @@
 from pathlib import Path
+from datetime import datetime, timezone
+from decimal import Decimal
 from tempfile import TemporaryDirectory
 from unittest import TestCase
 
 from openpyxl import Workbook
 
 from trade_helper.ledger import Ledger
+from trade_helper.execution import Advice, AdviceStatus, ExecutionLedger
 from trade_helper.ui.controller import DesktopController
 
 
@@ -47,3 +50,28 @@ class DesktopControllerTests(TestCase):
             self.assertTrue(result.imported)
             self.assertTrue(duplicate.duplicate)
             self.assertEqual(1, ledger.count("account_snapshots"))
+
+    def test_execution_feedback_only_records_actual_fills_as_trades(self) -> None:
+        with TemporaryDirectory() as directory:
+            database = Path(directory) / "account.db"
+            ledger = Ledger(database)
+            ledger.initialize()
+            now = datetime(2026, 7, 30, tzinfo=timezone.utc)
+            ExecutionLedger(ledger).create_advice(
+                Advice(
+                    "ADV-1", now, "personal-v1", "SP500", "513500",
+                    "BUY", 1000, Decimal("2.000"), "test",
+                )
+            )
+            controller = DesktopController(database)
+
+            controller.record_attempt(
+                "ADV-1", AdviceStatus.ORDER_SUBMITTED, occurred_at=now
+            )
+            self.assertEqual(0, ledger.count("trades"))
+            status = controller.record_fill(
+                "ADV-1", 400, Decimal("1.999"), occurred_at=now
+            )
+
+            self.assertEqual(AdviceStatus.PARTIALLY_FILLED, status)
+            self.assertEqual(1, ledger.count("trades"))

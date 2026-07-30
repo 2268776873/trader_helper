@@ -8,6 +8,7 @@ from decimal import Decimal
 from enum import StrEnum
 
 from trade_helper.config import StrategyConfig
+from trade_helper.execution import AdviceStatus
 from trade_helper.ledger import Ledger, LedgerConflict
 from trade_helper.market_data import MarketSnapshot
 from trade_helper.models import Readiness
@@ -123,6 +124,7 @@ class DecisionStore:
         outcome: DecisionOutcome,
         request: DecisionRequest,
         state_store: StrategyStateStore,
+        config: StrategyConfig | None = None,
     ) -> None:
         """Persist the released-period state, followed by its immutable audit record."""
         # A repeated decision id cannot duplicate a monthly release because released
@@ -145,6 +147,33 @@ class DecisionStore:
                         self._json(asdict(outcome)),
                     ),
                 )
+                if config is not None:
+                    asset_by_id = {item.asset_id: item for item in config.assets}
+                    for index, item in enumerate(outcome.advices, start=1):
+                        if item.action not in {"BUY", "SELL"}:
+                            continue
+                        asset = asset_by_id[item.asset_id]
+                        connection.execute(
+                            """
+                            INSERT INTO advice(
+                                advice_id, created_at, config_version, asset_id,
+                                etf_code, side, proposed_quantity,
+                                limit_price_milli, status, reason
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            """,
+                            (
+                                f"{outcome.decision_id}-A{index}",
+                                outcome.generated_at.isoformat(),
+                                outcome.config_version,
+                                item.asset_id,
+                                asset.etf_code,
+                                item.action,
+                                item.quantity,
+                                int(item.limit_price * 1000),
+                                AdviceStatus.PENDING_CONFIRMATION.value,
+                                "；".join(item.reasons),
+                            ),
+                        )
         except sqlite3.IntegrityError as error:
             raise LedgerConflict(
                 f"decision run conflict: {outcome.decision_id}"
