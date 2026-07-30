@@ -12,6 +12,9 @@ license = { text = "MIT" }
 authors = [{ name = "trade_helper contributors" }]
 dependencies = ["openpyxl>=3.1,<4"]
 
+[project.optional-dependencies]
+build = ["pyinstaller>=6.11,<7"]
+
 [project.scripts]
 trade-helper = "trade_helper.cli:main"
 trade-helper-gui = "trade_helper.ui.app:main"
