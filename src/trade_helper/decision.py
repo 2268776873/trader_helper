@@ -16,10 +16,12 @@ from trade_helper.state_store import RuntimeState, StrategyStateStore
 from trade_helper.strategy import (
     Advice,
     BasePlanInput,
+    CycleState,
     TacticalInput,
     evaluate_base_plan,
     plan_tactical_orders,
     release_monthly_base_budget,
+    update_cycle,
 )
 
 
@@ -38,6 +40,7 @@ class DecisionRequest:
     markets: tuple[MarketSnapshot, ...]
     tactical_inputs: tuple[TacticalInput, ...]
     base_input: BasePlanInput
+    advance_cycle: bool = True
 
 
 @dataclass(frozen=True)
@@ -79,11 +82,15 @@ def run_daily_decision(
             DecisionStatus.BLOCKED, tuple(reasons), (), runtime,
         )
 
+    cycled_runtime = (
+        _advance_tactical_cycles(runtime, request.tactical_inputs)
+        if request.advance_cycle else runtime
+    )
     released = release_monthly_base_budget(
         config, request.now.date(), request.a_share_trading_day_number,
-        runtime.base_budget,
+        cycled_runtime.base_budget,
     )
-    next_runtime = replace(runtime, base_budget=released)
+    next_runtime = replace(cycled_runtime, base_budget=released)
     tactical = plan_tactical_orders(config, request.tactical_inputs)
     advices = list(tactical)
     tactical_buy = sum(
@@ -104,6 +111,56 @@ def run_daily_decision(
         request.decision_id, request.now, config.config_version, status, (),
         tuple(advices), next_runtime,
     )
+
+
+def _advance_tactical_cycles(
+    runtime: RuntimeState,
+    inputs: tuple[TacticalInput, ...],
+) -> RuntimeState:
+    drawdown_by_asset = {item.asset_id: item.drawdown for item in inputs}
+    updated = list(runtime.tactical_levels)
+    for asset_id, drawdown in drawdown_by_asset.items():
+        indexes = [
+            index
+            for index, item in enumerate(updated)
+            if item.asset_id == asset_id
+        ]
+        if not indexes:
+            continue
+        prior_near_high_days = max(
+            updated[index].near_high_days for index in indexes
+        )
+        cycle = update_cycle(
+            drawdown,
+            drawdown == 0,
+            CycleState(
+                prior_near_high_days,
+                tuple(
+                    (
+                        updated[index].level_id,
+                        updated[index].status,
+                    )
+                    for index in indexes
+                ),
+            ),
+        )
+        status_by_level = dict(cycle.level_statuses)
+        reset = (
+            drawdown == 0
+            or (
+                drawdown <= Decimal("0.02")
+                and prior_near_high_days + 1 >= 20
+            )
+        )
+        for index in indexes:
+            item = updated[index]
+            updated[index] = replace(
+                item,
+                status=status_by_level[item.level_id],
+                filled_cny=Decimal("0") if reset else item.filled_cny,
+                near_high_days=cycle.near_high_days,
+            )
+    return replace(runtime, tactical_levels=tuple(updated))
 
 
 class DecisionStore:

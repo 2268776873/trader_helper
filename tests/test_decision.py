@@ -103,3 +103,50 @@ class DecisionTests(TestCase):
         )
         self.assertEqual(DecisionStatus.BLOCKED, result.status)
         self.assertIn("市场数据质量阻断", result.reasons[0])
+
+    def test_twentieth_near_high_day_resets_filled_cycle_once(self) -> None:
+        changed_levels = tuple(
+            replace(
+                item,
+                status="FILLED" if item.asset_id == "SP500" else item.status,
+                filled_cny=(
+                    Decimal("10000")
+                    if item.asset_id == "SP500" else item.filled_cny
+                ),
+                near_high_days=19 if item.asset_id == "SP500" else 0,
+            )
+            for item in self.runtime.tactical_levels
+        )
+        runtime = replace(self.runtime, tactical_levels=changed_levels)
+        request = self.request()
+        tactical = tuple(
+            replace(item, drawdown=Decimal("0.01"))
+            if item.asset_id == "SP500" else item
+            for item in request.tactical_inputs
+        )
+
+        reset = run_daily_decision(
+            self.config, runtime, replace(request, tactical_inputs=tactical)
+        )
+        sp_levels = tuple(
+            item
+            for item in reset.runtime.tactical_levels
+            if item.asset_id == "SP500"
+        )
+        self.assertTrue(all(item.status == "ARMED" for item in sp_levels))
+        self.assertTrue(all(item.filled_cny == 0 for item in sp_levels))
+        self.assertTrue(all(item.near_high_days == 0 for item in sp_levels))
+
+        unchanged = run_daily_decision(
+            self.config,
+            runtime,
+            replace(
+                request, tactical_inputs=tactical, advance_cycle=False
+            ),
+        )
+        sp_levels = tuple(
+            item
+            for item in unchanged.runtime.tactical_levels
+            if item.asset_id == "SP500"
+        )
+        self.assertTrue(all(item.near_high_days == 19 for item in sp_levels))

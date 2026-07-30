@@ -99,6 +99,7 @@ class DailyDecisionServiceTests(TestCase):
                 a_share_trading_day_number=10,
             )
             self.assertTrue(projected.reconciled)
+            self.assertFalse(projected.advance_cycle)
             self.assertEqual(
                 Decimal("350000") - fill_value,
                 projected.base_input.cash_cny,

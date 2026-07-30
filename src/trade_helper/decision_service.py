@@ -73,6 +73,12 @@ class DailyDecisionService:
                 FROM trades WHERE status = 'FILLED'
                 """
             ).fetchall()
+            successful_decisions = connection.execute(
+                """
+                SELECT generated_at FROM decision_runs
+                WHERE status IN ('READY', 'NO_ACTION')
+                """
+            ).fetchall()
         total = Decimal(snapshot["total_assets_fen"]) / 100
         snapshot_at = datetime.fromisoformat(snapshot["as_of"])
         cash = (
@@ -209,6 +215,10 @@ class DailyDecisionService:
             BasePlanInput(
                 total, cash, runtime.base_budget.available_cny, today_buy,
                 tuple(base_candidates),
+            ),
+            not any(
+                datetime.fromisoformat(row["generated_at"]).date() == now.date()
+                for row in successful_decisions
             ),
         )
 
