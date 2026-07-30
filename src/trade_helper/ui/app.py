@@ -934,8 +934,23 @@ class TradeHelperApp(tk.Tk):
             ).pack(side="right")
 
 
+def default_database_path() -> Path:
+    configured = os.environ.get("TRADE_HELPER_DB")
+    if configured:
+        return Path(configured).expanduser()
+    if getattr(sys, "frozen", False):
+        local_app_data = os.environ.get("LOCALAPPDATA")
+        if not local_app_data:
+            raise RuntimeError(
+                "Windows LOCALAPPDATA is unavailable; set TRADE_HELPER_DB"
+            )
+        return Path(local_app_data) / "TradeHelper" / "account.db"
+    return Path("var/account.db")
+
+
 def main() -> int:
-    database = os.environ.get("TRADE_HELPER_DB", "var/account.db")
+    database = default_database_path()
+    database.parent.mkdir(parents=True, exist_ok=True)
     app = TradeHelperApp(DashboardRepository(database).load(), database)
     app.mainloop()
     return 0

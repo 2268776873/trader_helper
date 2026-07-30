@@ -25,3 +25,7 @@
 - 安装器与卸载流程。
 
 不得把测试数据库、真实账户工作簿或 `var` 目录打入发布包。
+
+打包客户端默认将个人数据库保存在
+`%LOCALAPPDATA%\TradeHelper\account.db`，不会尝试写入 EXE 所在目录。需要便携式
+或自定义存储位置时，可在启动前设置 `TRADE_HELPER_DB`。
