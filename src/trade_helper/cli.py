@@ -232,7 +232,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(
             json.dumps(
                 {
-                    "ok": not result.source_errors,
+                    "ok": result.usable,
+                    "degraded": result.degraded,
                     "source_errors": result.source_errors,
                     "snapshots": [
                         {
@@ -247,7 +248,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 indent=2,
             )
         )
-        return 0 if not result.source_errors else 8
+        return 0 if result.usable else 8
     if args.command == "example-init":
         example_now = datetime(
             2026, 9, 14, 14, 0, tzinfo=ZoneInfo("Asia/Shanghai")

@@ -61,6 +61,8 @@ class MarketCollectionTests(TestCase):
                 supplements=self.supplements(),
             )
             self.assertTrue(all(item.readiness == Readiness.READY for item in result.snapshots))
+            self.assertTrue(result.usable)
+            self.assertFalse(result.degraded)
             self.assertEqual(3, ledger.count("market_snapshots"))
             self.assertEqual(3, ledger.count("reference_series"))
 
@@ -80,6 +82,8 @@ class MarketCollectionTests(TestCase):
                 supplements=self.supplements(),
             )
             self.assertTrue(all(item.readiness == Readiness.BLOCKED for item in result.snapshots))
+            self.assertFalse(result.usable)
+            self.assertTrue(result.degraded)
             self.assertIn("q2: offline", result.source_errors)
 
     def test_broker_quote_can_replace_one_failed_public_quote_source(self) -> None:
@@ -108,6 +112,8 @@ class MarketCollectionTests(TestCase):
             self.assertTrue(
                 all(item.readiness == Readiness.READY for item in result.snapshots)
             )
+            self.assertTrue(result.usable)
+            self.assertTrue(result.degraded)
             self.assertTrue(
                 all("q2: offline" in item.reasons for item in result.snapshots)
             )

@@ -16,7 +16,7 @@ from trade_helper.market_data import (
     ObservationKind,
     aggregate_market_data,
 )
-from trade_helper.models import Quote
+from trade_helper.models import Quote, Readiness
 from trade_helper.providers.eastmoney import EastmoneyEtfProvider
 from trade_helper.providers.sina import SinaEtfProvider
 from trade_helper.reference_series import ReferencePoint, ReferenceSeriesStore
@@ -52,6 +52,16 @@ class EastmoneySource:
 class CollectionResult:
     snapshots: tuple[MarketSnapshot, ...]
     source_errors: tuple[str, ...]
+
+    @property
+    def usable(self) -> bool:
+        return bool(self.snapshots) and all(
+            snapshot.readiness == Readiness.READY for snapshot in self.snapshots
+        )
+
+    @property
+    def degraded(self) -> bool:
+        return bool(self.source_errors)
 
 
 def load_manual_supplement(
