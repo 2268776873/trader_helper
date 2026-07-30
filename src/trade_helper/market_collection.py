@@ -16,7 +16,7 @@ from trade_helper.market_data import (
     ObservationKind,
     aggregate_market_data,
 )
-from trade_helper.models import Quote, Readiness
+from trade_helper.models import Quote
 from trade_helper.providers.eastmoney import EastmoneyEtfProvider
 from trade_helper.providers.sina import SinaEtfProvider
 from trade_helper.reference_series import ReferencePoint, ReferenceSeriesStore
@@ -98,11 +98,29 @@ class MarketCollectionService:
         for asset in self.config.assets:
             supplement = supplements.get(asset.asset_id, {})
             observations = self._observations(observed_at, supplement)
+            asset_quotes = list(quotes)
+            manual_quote = supplement.get("quote")
+            if manual_quote is not None:
+                asset_quotes.append(
+                    Quote(
+                        asset.etf_code,
+                        asset.display_name,
+                        observed_at,
+                        float(manual_quote["last"])
+                        if manual_quote.get("last") is not None else None,
+                        float(manual_quote["bid"])
+                        if manual_quote.get("bid") is not None else None,
+                        float(manual_quote["ask"])
+                        if manual_quote.get("ask") is not None else None,
+                        None,
+                        str(manual_quote["source"]),
+                    )
+                )
             snapshot = aggregate_market_data(
                 snapshot_id=f"MKT-{asset.etf_code}-{observed_at:%Y%m%dT%H%M%S%z}",
                 symbol=asset.etf_code,
                 now=observed_at,
-                quotes=tuple(quotes),
+                quotes=tuple(asset_quotes),
                 observations=observations,
                 maximum_premium_difference=Decimal(
                     str(
@@ -115,7 +133,6 @@ class MarketCollectionService:
             if errors:
                 snapshot = replace(
                     snapshot,
-                    readiness=Readiness.BLOCKED,
                     reasons=(*snapshot.reasons, *errors),
                 )
             market_store.save(snapshot)

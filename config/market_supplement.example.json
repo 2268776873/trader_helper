@@ -2,6 +2,12 @@
   "observed_at": "2026-07-30T14:00:00+08:00",
   "assets": {
     "SP500": {
+      "quote": {
+        "source": "BROKER_MANUAL",
+        "last": 2.000,
+        "bid": 1.999,
+        "ask": 2.000
+      },
       "valuations": [
         {"source": "VALUATION_SOURCE_A", "value": 2.000},
         {"source": "VALUATION_SOURCE_B", "value": 2.001}
@@ -16,6 +22,12 @@
       }
     },
     "NASDAQ": {
+      "quote": {
+        "source": "BROKER_MANUAL",
+        "last": 2.000,
+        "bid": 1.999,
+        "ask": 2.000
+      },
       "valuations": [
         {"source": "VALUATION_SOURCE_A", "value": 2.000},
         {"source": "VALUATION_SOURCE_B", "value": 2.001}
@@ -25,6 +37,12 @@
       "reference_value_cny": 100.0
     },
     "DIVIDEND": {
+      "quote": {
+        "source": "BROKER_MANUAL",
+        "last": 1.500,
+        "bid": 1.499,
+        "ask": 1.500
+      },
       "valuations": [
         {"source": "VALUATION_SOURCE_A", "value": 1.500},
         {"source": "VALUATION_SOURCE_B", "value": 1.501}

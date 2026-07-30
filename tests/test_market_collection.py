@@ -81,3 +81,33 @@ class MarketCollectionTests(TestCase):
             )
             self.assertTrue(all(item.readiness == Readiness.BLOCKED for item in result.snapshots))
             self.assertIn("q2: offline", result.source_errors)
+
+    def test_broker_quote_can_replace_one_failed_public_quote_source(self) -> None:
+        with TemporaryDirectory() as directory:
+            ledger = Ledger(Path(directory) / "account.db")
+            ledger.initialize()
+            service = MarketCollectionService(
+                ledger,
+                load_strategy_config(ROOT / "config" / "personal_v1.json"),
+                (FakeSource("q1", 2), FakeSource("q2", 2, fail=True)),
+            )
+            supplements = self.supplements()
+            for item in supplements.values():
+                item["quote"] = {
+                    "source": "BROKER_MANUAL",
+                    "last": 2,
+                    "bid": 2,
+                    "ask": 2,
+                }
+            result = service.collect(
+                observed_at=datetime(
+                    2026, 7, 30, 14, 0, tzinfo=ZoneInfo("Asia/Shanghai")
+                ),
+                supplements=supplements,
+            )
+            self.assertTrue(
+                all(item.readiness == Readiness.READY for item in result.snapshots)
+            )
+            self.assertTrue(
+                all("q2: offline" in item.reasons for item in result.snapshots)
+            )
