@@ -6,6 +6,7 @@ from trade_helper.cash_management import (
     CashPools,
     apply_actual_cash_flow,
     buying_is_blocked,
+    plan_cash_event,
 )
 from trade_helper.config import load_strategy_config
 
@@ -45,6 +46,18 @@ class CashManagementTests(unittest.TestCase):
     def test_cannot_withdraw_more_than_strategy_cash(self):
         with self.assertRaisesRegex(ValueError, "exceeds"):
             apply_actual_cash_flow(self.config, self.pools(), Decimal("-350001"))
+
+    def test_cash_event_plan_is_conservative_and_auditable(self):
+        sale = plan_cash_event(
+            self.config, self.pools(), "SELL_PROCEEDS", Decimal("10000")
+        )
+        self.assertEqual(Decimal("60000"), sale.after.strategic_cny)
+        self.assertEqual(Decimal("125000"), sale.after.base_cny)
+        self.assertIn("STRATEGIC", sale.policy)
+        self.assertEqual(
+            Decimal("10000"),
+            sum((amount for _, amount in sale.allocations), Decimal("0")),
+        )
 
 
 if __name__ == "__main__":

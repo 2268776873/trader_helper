@@ -178,6 +178,12 @@ class TradeHelperApp(tk.Tk):
             bg=COLORS["surface_hover"], activebackground=COLORS["blue"],
             relief="flat", padx=16, pady=7, cursor="hand2",
         ).pack(side="right", padx=(0, 8), pady=25)
+        tk.Button(
+            header, text="存取现金", command=self._open_cash_event,
+            font=FONTS["body"], fg=COLORS["text"],
+            bg=COLORS["surface_hover"], activebackground=COLORS["blue"],
+            relief="flat", padx=16, pady=7, cursor="hand2",
+        ).pack(side="right", padx=(0, 8), pady=25)
         tk.Label(
             status, text="●", fg=status_color(self.model.data_status.value),
             bg=COLORS["surface"],
@@ -580,6 +586,92 @@ class TradeHelperApp(tk.Tk):
         messagebox.showinfo(
             "账户快照已保存", f"快照 ID：{snapshot_id}", parent=self
         )
+        self._reload_dashboard()
+
+    def _open_cash_event(self) -> None:
+        window = tk.Toplevel(self)
+        window.title("Trade Helper · 存取现金")
+        window.geometry("520x420")
+        window.configure(bg=COLORS["window"])
+        tk.Label(
+            window, text="存取现金与资金池规划", font=FONTS["hero"],
+            fg=COLORS["text"], bg=COLORS["window"],
+        ).pack(anchor="w", padx=28, pady=(24, 5))
+        tk.Label(
+            window,
+            text="系统按冻结规则自动更新账户、五个虚拟资金池和审计事件。",
+            font=FONTS["small"], fg=COLORS["muted"], bg=COLORS["window"],
+        ).pack(anchor="w", padx=28, pady=(0, 18))
+        form = self._card(window)
+        form.pack(fill="both", expand=True, padx=28, pady=(0, 28))
+        tk.Label(
+            form, text="类型", font=FONTS["small"],
+            fg=COLORS["muted"], bg=COLORS["surface"],
+        ).pack(anchor="w", padx=20, pady=(18, 5))
+        event_type = ttk.Combobox(
+            form, values=("存款", "取款"), state="readonly",
+            font=FONTS["body"],
+        )
+        event_type.set("存款")
+        event_type.pack(fill="x", padx=20)
+        tk.Label(
+            form, text="金额（元）", font=FONTS["small"],
+            fg=COLORS["muted"], bg=COLORS["surface"],
+        ).pack(anchor="w", padx=20, pady=(14, 5))
+        amount = tk.Entry(
+            form, font=FONTS["body"], bg=COLORS["surface_hover"],
+            fg=COLORS["text"], insertbackground=COLORS["text"],
+            relief="flat",
+        )
+        amount.pack(fill="x", padx=20, ipady=7)
+        tk.Label(
+            form, text="备注", font=FONTS["small"],
+            fg=COLORS["muted"], bg=COLORS["surface"],
+        ).pack(anchor="w", padx=20, pady=(14, 5))
+        notes = tk.Entry(
+            form, font=FONTS["body"], bg=COLORS["surface_hover"],
+            fg=COLORS["text"], insertbackground=COLORS["text"],
+            relief="flat",
+        )
+        notes.pack(fill="x", padx=20, ipady=7)
+        tk.Button(
+            form, text="确认并生成审计记录",
+            command=lambda: self._submit_cash_event(
+                window, event_type.get(), amount.get(), notes.get()
+            ),
+            bg=COLORS["cyan"], fg=COLORS["window"], relief="flat",
+            padx=18, pady=9, cursor="hand2", font=FONTS["body"],
+        ).pack(anchor="e", padx=20, pady=20)
+
+    def _submit_cash_event(
+        self,
+        window: tk.Toplevel,
+        event_label: str,
+        amount_text: str,
+        notes: str,
+    ) -> None:
+        try:
+            amount = Decimal(amount_text.strip())
+            event_type = "DEPOSIT" if event_label == "存款" else "WITHDRAWAL"
+            result = self.controller.record_cash_event(
+                event_type, amount, notes=notes
+            )
+        except Exception as error:
+            messagebox.showerror("存取款失败", str(error), parent=window)
+            return
+        allocations = "\n".join(
+            f"{name}: {change:+,.2f}"
+            for name, change in result.transition.allocations
+            if change
+        )
+        messagebox.showinfo(
+            "资金池已重新规划",
+            f"账户现金：¥{result.available_cash_cny:,.2f}\n"
+            f"采用规则：{result.transition.policy}\n\n"
+            f"资金池变化：\n{allocations}",
+            parent=window,
+        )
+        window.destroy()
         self._reload_dashboard()
 
     def _open_data_center(self) -> None:

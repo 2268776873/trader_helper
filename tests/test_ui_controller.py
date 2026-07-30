@@ -12,6 +12,7 @@ from trade_helper.ledger import CashFlow, Ledger
 from trade_helper.execution import Advice, AdviceStatus, ExecutionLedger
 from trade_helper.example_data import create_example_database
 from trade_helper.models import Quote
+from trade_helper.state_store import StrategyStateStore
 from trade_helper.ui.controller import (
     AccountForm, DesktopController, PositionForm,
 )
@@ -91,16 +92,33 @@ class DesktopControllerTests(TestCase):
                 PositionForm("NASDAQ", "513100", 30000, Decimal("60000")),
                 PositionForm("DIVIDEND", "515450", 21000, Decimal("30000")),
             )
+            when = datetime(2026, 7, 30, 14, 0, tzinfo=timezone.utc)
             with self.assertRaises(ValueError):
                 controller.record_account(
-                    AccountForm(Decimal("499999"), Decimal("350000"), positions)
+                    AccountForm(
+                        Decimal("499999"), Decimal("350000"), positions
+                    ),
+                    occurred_at=when,
                 )
             controller.record_account(
-                AccountForm(Decimal("500000"), Decimal("350000"), positions)
+                AccountForm(Decimal("500000"), Decimal("350000"), positions),
+                occurred_at=when,
             )
             ledger = Ledger(database)
-            self.assertEqual(1, ledger.count("account_snapshots"))
-            self.assertEqual(3, ledger.count("position_snapshots"))
+            StrategyStateStore(ledger).initialize_runtime(
+                load_strategy_config(
+                    Path(__file__).resolve().parents[1]
+                    / "config" / "personal_v1.json"
+                )
+            )
+            cash_event = controller.record_cash_event(
+                "DEPOSIT",
+                Decimal("1000"),
+                occurred_at=when + timedelta(minutes=1),
+            )
+            self.assertEqual(Decimal("351000"), cash_event.available_cash_cny)
+            self.assertEqual(2, ledger.count("account_snapshots"))
+            self.assertEqual(6, ledger.count("position_snapshots"))
 
     def test_market_collection_returns_client_friendly_summary(self) -> None:
         class Source:

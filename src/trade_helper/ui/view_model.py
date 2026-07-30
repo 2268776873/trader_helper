@@ -332,6 +332,14 @@ class DashboardRepository:
                 """,
                 (limit,),
             ).fetchall()
+            pool_events = connection.execute(
+                """
+                SELECT occurred_at, event_id, event_type, amount_fen, policy
+                FROM cash_pool_events
+                ORDER BY occurred_at DESC LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
         records = [
             HistoryRecord(
                 datetime.fromisoformat(row["generated_at"]),
@@ -364,6 +372,19 @@ class DashboardRepository:
                 f"{Decimal(row['amount_fen']) / 100:+,.2f} 元",
             )
             for row in flows
+        )
+        records.extend(
+            HistoryRecord(
+                datetime.fromisoformat(row["occurred_at"]),
+                "资金池",
+                row["event_id"],
+                row["event_type"],
+                (
+                    f"{Decimal(row['amount_fen']) / 100:+,.2f} 元 · "
+                    f"{row['policy']}"
+                ),
+            )
+            for row in pool_events
         )
         records.sort(key=lambda item: item.occurred_at, reverse=True)
         return tuple(records[:limit])

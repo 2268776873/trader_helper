@@ -8,6 +8,8 @@ from datetime import datetime
 from decimal import Decimal
 from enum import StrEnum
 
+from trade_helper.cash_management import CashPools, plan_cash_event
+from trade_helper.config import strategy_config_from_dict
 from trade_helper.ledger import (
     Ledger, LedgerConflict, _iso, cny_to_fen, price_to_milli,
 )
@@ -178,7 +180,8 @@ class ExecutionLedger:
                         )
                     else:
                         self._apply_sell_fill_state(
-                            connection, advice, actual_fen, fill.filled_at
+                            connection, advice, actual_fen, fill.filled_at,
+                            fill.fill_id,
                         )
                 connection.execute(
                     """
@@ -321,24 +324,91 @@ class ExecutionLedger:
         advice: sqlite3.Row,
         actual_fen: int,
         filled_at: datetime,
+        fill_id: str,
     ) -> None:
         if advice["funding_pool"] != "STRATEGIC":
             raise ValueError(
                 "sell proceeds must be assigned to strategic cash"
             )
         runtime = connection.execute(
-            "SELECT 1 FROM strategy_runtime WHERE runtime_id = 1"
+            "SELECT * FROM strategy_runtime WHERE runtime_id = 1"
         ).fetchone()
         if runtime is None:
             raise ValueError("strategy runtime is not initialized")
+        config_row = connection.execute(
+            "SELECT content_json FROM config_versions WHERE config_version = ?",
+            (advice["config_version"],),
+        ).fetchone()
+        if config_row is None:
+            raise ValueError("advice config version is missing")
+        config = strategy_config_from_dict(
+            json.loads(config_row["content_json"])
+        )
+        before = CashPools(
+            Decimal(runtime["base_pool_fen"]) / 100,
+            Decimal(runtime["tactical_sp_fen"]) / 100,
+            Decimal(runtime["tactical_nd_fen"]) / 100,
+            Decimal(runtime["tactical_dv_fen"]) / 100,
+            Decimal(runtime["strategic_fen"]) / 100,
+        )
+        transition = plan_cash_event(
+            config,
+            before,
+            "SELL_PROCEEDS",
+            Decimal(actual_fen) / 100,
+        )
         connection.execute(
             """
             UPDATE strategy_runtime SET
-                strategic_fen = strategic_fen + ?,
+                base_pool_fen = ?,
+                tactical_sp_fen = ?,
+                tactical_nd_fen = ?,
+                tactical_dv_fen = ?,
+                strategic_fen = ?,
                 updated_at = ?
             WHERE runtime_id = 1
             """,
-            (actual_fen, _iso(filled_at)),
+            (
+                cny_to_fen(transition.after.base_cny),
+                cny_to_fen(transition.after.tactical_sp_cny),
+                cny_to_fen(transition.after.tactical_nd_cny),
+                cny_to_fen(transition.after.tactical_dv_cny),
+                cny_to_fen(transition.after.strategic_cny),
+                _iso(filled_at),
+            ),
+        )
+        connection.execute(
+            """
+            INSERT INTO cash_pool_events(
+                event_id, occurred_at, event_type, amount_fen, source_ref,
+                before_json, after_json, policy
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                f"POOL-{fill_id}",
+                _iso(filled_at),
+                transition.event_type,
+                actual_fen,
+                fill_id,
+                ExecutionLedger._cash_pools_json(transition.before),
+                ExecutionLedger._cash_pools_json(transition.after),
+                transition.policy,
+            ),
+        )
+
+    @staticmethod
+    def _cash_pools_json(pools: CashPools) -> str:
+        return json.dumps(
+            {
+                "base_cny": str(pools.base_cny),
+                "tactical_sp_cny": str(pools.tactical_sp_cny),
+                "tactical_nd_cny": str(pools.tactical_nd_cny),
+                "tactical_dv_cny": str(pools.tactical_dv_cny),
+                "strategic_cny": str(pools.strategic_cny),
+                "total_cny": str(pools.total_cny),
+            },
+            ensure_ascii=False,
+            sort_keys=True,
         )
 
     def status(self, advice_id: str) -> AdviceStatus:

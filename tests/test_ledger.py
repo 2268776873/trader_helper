@@ -136,7 +136,8 @@ class LedgerTests(TestCase):
         }
         connection.close()
         self.assertIn("sort_order", columns)
-        self.assertEqual("7", version)
+        self.assertEqual("8", version)
         self.assertIn("level_id", advice_columns)
         self.assertIn("funding_pool", advice_columns)
         self.assertIn("rebalance_state", tables)
+        self.assertIn("cash_pool_events", tables)

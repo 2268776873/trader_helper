@@ -7,6 +7,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from trade_helper.backup import BackupManifest, create_backup, restore_backup
+from trade_helper.cash_events import CashEventResult, apply_account_cash_event
 from trade_helper.decision_service import DailyDecisionService
 from trade_helper.execution import (
     AdviceStatus,
@@ -309,4 +310,24 @@ class DesktopController:
             outcome.status.value,
             len(outcome.advices),
             outcome.reasons,
+        )
+
+    def record_cash_event(
+        self,
+        event_type: str,
+        amount_cny: Decimal,
+        *,
+        notes: str = "",
+        occurred_at: datetime | None = None,
+    ) -> CashEventResult:
+        when = occurred_at or datetime.now().astimezone()
+        token = uuid4().hex
+        return apply_account_cash_event(
+            self.database,
+            event_id=f"FLOW-APP-{token}",
+            snapshot_id=f"SNAP-CASH-{token}",
+            occurred_at=when,
+            event_type=event_type,
+            amount_cny=amount_cny,
+            notes=notes,
         )

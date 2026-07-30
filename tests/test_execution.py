@@ -168,3 +168,4 @@ class ExecutionLedgerTests(TestCase):
             initial.cash_pools.strategic_cny + Decimal("804"),
             updated.cash_pools.strategic_cny,
         )
+        self.assertEqual(1, self.ledger.count("cash_pool_events"))

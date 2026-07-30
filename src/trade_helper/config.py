@@ -48,7 +48,12 @@ def _decimal(value: Any, field: str) -> Decimal:
 def load_strategy_config(path: str | Path) -> StrategyConfig:
     config_path = Path(path)
     raw = json.loads(config_path.read_text(encoding="utf-8"))
+    return strategy_config_from_dict(raw)
 
+
+def strategy_config_from_dict(raw: dict[str, Any]) -> StrategyConfig:
+    if not isinstance(raw, dict):
+        raise ConfigError("strategy config root must be an object")
     assets = tuple(
         AssetConfig(
             asset_id=str(item["asset_id"]),

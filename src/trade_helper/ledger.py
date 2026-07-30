@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Iterator
 
 
-CURRENT_SCHEMA_VERSION = 7
+CURRENT_SCHEMA_VERSION = 8
 
 
 class LedgerConflict(RuntimeError):
@@ -99,7 +99,7 @@ class Ledger:
                     value TEXT NOT NULL
                 );
                 INSERT OR REPLACE INTO schema_metadata(key, value)
-                VALUES ('schema_version', '7');
+                VALUES ('schema_version', '8');
 
                 CREATE TABLE IF NOT EXISTS account_snapshots (
                     snapshot_id TEXT PRIMARY KEY,
@@ -228,6 +228,17 @@ class Ledger:
                     days_above_max INTEGER NOT NULL CHECK(days_above_max >= 0),
                     last_evaluated_date TEXT NOT NULL,
                     updated_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS cash_pool_events (
+                    event_id TEXT PRIMARY KEY,
+                    occurred_at TEXT NOT NULL,
+                    event_type TEXT NOT NULL,
+                    amount_fen INTEGER NOT NULL,
+                    source_ref TEXT NOT NULL UNIQUE,
+                    before_json TEXT NOT NULL,
+                    after_json TEXT NOT NULL,
+                    policy TEXT NOT NULL
                 );
 
                 CREATE TABLE IF NOT EXISTS market_snapshots (
@@ -557,6 +568,8 @@ class Ledger:
             "decision_runs",
             "reference_series",
             "trading_calendar",
+            "rebalance_state",
+            "cash_pool_events",
         }
         if table not in allowed:
             raise ValueError("unsupported table")
