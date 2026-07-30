@@ -48,6 +48,12 @@ python -m trade_helper.cli restore .\var\backups\account.thbackup --database .\v
 恢复操作会先在临时目录校验归档结构、文件大小、内容哈希和 SQLite 完整性，全部
 通过后才替换目标数据库。
 
+汇总影子运行覆盖情况（默认验收门为20个有审计记录的交易日）：
+
+```powershell
+python -m trade_helper.cli shadow-report --database .\var\account.db --output .\var\shadow-report.json
+```
+
 也可以使用 Windows 脚本，并在未配置 PATH 时传入 Python 完整路径：
 
 ```powershell

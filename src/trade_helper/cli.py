@@ -11,6 +11,7 @@ from trade_helper.feasibility import assess_quote, overall_readiness
 from trade_helper.excel_import import commit_preview, preview_workbook
 from trade_helper.ledger import Ledger, LedgerConflict
 from trade_helper.backup import BackupError, create_backup, restore_backup
+from trade_helper.shadow_run import build_shadow_report, write_shadow_report
 from trade_helper.models import ProbeResult, Readiness
 from trade_helper.providers.sina import SinaError, SinaEtfProvider
 
@@ -67,11 +68,26 @@ def build_parser() -> argparse.ArgumentParser:
     restore = subparsers.add_parser("restore", help="verify and restore a local backup")
     restore.add_argument("backup", type=Path)
     restore.add_argument("--database", type=Path, required=True)
+    shadow = subparsers.add_parser(
+        "shadow-report", help="summarize audited shadow-run coverage"
+    )
+    shadow.add_argument("--database", type=Path, required=True)
+    shadow.add_argument("--output", type=Path)
+    shadow.add_argument("--required-days", type=int, default=20)
     return parser
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    if args.command == "shadow-report":
+        report = build_shadow_report(
+            args.database, required_trading_days=args.required_days
+        )
+        if args.output:
+            write_shadow_report(report, args.output)
+        print(json.dumps(report.to_dict(), ensure_ascii=False, indent=2))
+        return 0 if report.completed else 5
+
     if args.command in {"backup", "restore"}:
         try:
             manifest = (
