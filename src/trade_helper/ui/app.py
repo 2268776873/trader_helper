@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import tkinter as tk
 import os
+import sys
+import threading
 from dataclasses import dataclass
 from decimal import Decimal
 from pathlib import Path
@@ -10,7 +12,7 @@ from tkinter import filedialog, messagebox, simpledialog, ttk
 from trade_helper.execution import AdviceStatus
 from trade_helper.ui.theme import COLORS, FONTS, status_color
 from trade_helper.ui.controller import (
-    AccountForm, DesktopController, PositionForm,
+    AccountForm, DesktopController, MarketCollectionSummary, PositionForm,
 )
 from trade_helper.ui.view_model import (
     DashboardRepository,
@@ -588,7 +590,26 @@ class TradeHelperApp(tk.Tk):
             window,
             text="最新多源快照、来源覆盖和阻断原因",
             font=FONTS["small"], fg=COLORS["muted"], bg=COLORS["window"],
-        ).pack(anchor="w", padx=28, pady=(0, 18))
+        ).pack(anchor="w", padx=28, pady=(0, 10))
+        actions = tk.Frame(window, bg=COLORS["window"])
+        actions.pack(fill="x", padx=28, pady=(0, 14))
+        collection_status = tk.StringVar(value="选择当日补充 JSON 后采集多源行情")
+        collect_button = tk.Button(
+            actions,
+            text="采集当日行情",
+            command=lambda: self._collect_market_from_file(
+                window, tree, collection_status, collect_button
+            ),
+            bg=COLORS["cyan"], fg=COLORS["window"],
+            activebackground=COLORS["cyan_soft"],
+            relief="flat", padx=18, pady=8, cursor="hand2",
+            font=FONTS["small"],
+        )
+        collect_button.pack(side="left")
+        tk.Label(
+            actions, textvariable=collection_status, font=FONTS["small"],
+            fg=COLORS["muted"], bg=COLORS["window"],
+        ).pack(side="left", padx=14)
         style = ttk.Style(window)
         style.configure(
             "Audit.Treeview",
@@ -626,6 +647,11 @@ class TradeHelperApp(tk.Tk):
         tree.configure(yscrollcommand=scrollbar.set)
         tree.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
+        self._populate_market_tree(tree)
+
+    def _populate_market_tree(self, tree: ttk.Treeview) -> None:
+        for item in tree.get_children():
+            tree.delete(item)
         for detail in DashboardRepository(self.database).load_market_details():
             tree.insert(
                 "", "end",
@@ -639,6 +665,107 @@ class TradeHelperApp(tk.Tk):
                     "；".join(detail.reasons) or "无",
                 ),
             )
+
+    def _collect_market_from_file(
+        self,
+        window: tk.Toplevel,
+        tree: ttk.Treeview,
+        status: tk.StringVar,
+        button: tk.Button,
+    ) -> None:
+        supplement = filedialog.askopenfilename(
+            parent=window,
+            title="选择当日行情补充文件",
+            filetypes=(("JSON 文件", "*.json"), ("所有文件", "*.*")),
+        )
+        if not supplement:
+            return
+        try:
+            config = self._strategy_config_path()
+        except FileNotFoundError as error:
+            messagebox.showerror("配置缺失", str(error), parent=window)
+            return
+        button.configure(state="disabled")
+        status.set("正在连接行情源并校验数据…")
+
+        def collect() -> None:
+            try:
+                result = self.controller.collect_market(supplement, config)
+            except Exception as error:
+                window.after(
+                    0, lambda caught=error: self._finish_market_collection(
+                        window, tree, status, button, None, caught
+                    )
+                )
+            else:
+                window.after(
+                    0, lambda collected=result: self._finish_market_collection(
+                        window, tree, status, button, collected, None
+                    )
+                )
+
+        threading.Thread(target=collect, daemon=True).start()
+
+    def _finish_market_collection(
+        self,
+        window: tk.Toplevel,
+        tree: ttk.Treeview,
+        status: tk.StringVar,
+        button: tk.Button,
+        result: MarketCollectionSummary | None,
+        error: Exception | None,
+    ) -> None:
+        button.configure(state="normal")
+        if error is not None:
+            status.set("采集失败")
+            messagebox.showerror("行情采集失败", str(error), parent=window)
+            return
+        assert result is not None
+        self._populate_market_tree(tree)
+        self._reload_dashboard()
+        ready_count = sum(
+            readiness == "READY" for _, readiness, _ in result.snapshots
+        )
+        if result.usable:
+            label = "采集完成（降级可用）" if result.degraded else "采集完成"
+            status.set(f"{label} · READY {ready_count}/3")
+            if result.degraded:
+                messagebox.showwarning(
+                    "行情降级可用",
+                    "全部标的已 READY，但部分公共源失败；异常已写入审计记录。",
+                    parent=window,
+                )
+        else:
+            status.set(f"采集已阻断 · READY {ready_count}/3")
+            messagebox.showwarning(
+                "行情未就绪",
+                "至少一个标的未达到 READY，系统不会生成交易建议。"
+                "请查看表格中的阻断原因。",
+                parent=window,
+            )
+
+    @staticmethod
+    def _strategy_config_path() -> Path:
+        configured = os.environ.get("TRADE_HELPER_CONFIG")
+        candidates = []
+        if configured:
+            candidates.append(Path(configured))
+        bundle_root = getattr(sys, "_MEIPASS", None)
+        if bundle_root:
+            candidates.append(Path(bundle_root) / "config" / "personal_v1.json")
+        candidates.extend(
+            (
+                Path.cwd() / "config" / "personal_v1.json",
+                Path(__file__).resolve().parents[3]
+                / "config" / "personal_v1.json",
+            )
+        )
+        for candidate in candidates:
+            if candidate.is_file():
+                return candidate
+        raise FileNotFoundError(
+            "找不到 personal_v1.json；可通过 TRADE_HELPER_CONFIG 指定路径"
+        )
 
     def _open_strategy_state(self) -> None:
         versions, levels = DashboardRepository(

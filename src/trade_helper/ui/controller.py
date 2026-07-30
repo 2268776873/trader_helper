@@ -15,6 +15,13 @@ from trade_helper.execution import (
 from trade_helper.excel_import import ImportIssue, commit_preview, preview_workbook
 from trade_helper.ledger import Ledger, LedgerConflict
 from trade_helper.ledger import AccountSnapshot, PositionSnapshot
+from trade_helper.config import load_strategy_config
+from trade_helper.market_collection import (
+    CollectionResult,
+    MarketCollectionService,
+    QuoteSource,
+    load_manual_supplement,
+)
 
 
 @dataclass(frozen=True)
@@ -47,6 +54,14 @@ class AccountForm:
     available_cash_cny: Decimal
     positions: tuple[PositionForm, ...]
     notes: str = ""
+
+
+@dataclass(frozen=True)
+class MarketCollectionSummary:
+    usable: bool
+    degraded: bool
+    source_errors: tuple[str, ...]
+    snapshots: tuple[tuple[str, str, tuple[str, ...]], ...]
 
 
 class DesktopController:
@@ -171,3 +186,32 @@ class DesktopController:
             ),
         )
         return snapshot_id
+
+    def collect_market(
+        self,
+        supplement: str | Path,
+        config: str | Path,
+        *,
+        sources: tuple[QuoteSource, ...] | None = None,
+    ) -> MarketCollectionSummary:
+        observed_at, supplements = load_manual_supplement(supplement)
+        ledger = Ledger(self.database)
+        ledger.initialize()
+        result: CollectionResult = MarketCollectionService(
+            ledger,
+            load_strategy_config(config),
+            sources,
+        ).collect(observed_at=observed_at, supplements=supplements)
+        return MarketCollectionSummary(
+            result.usable,
+            result.degraded,
+            result.source_errors,
+            tuple(
+                (
+                    snapshot.symbol,
+                    snapshot.readiness.value,
+                    snapshot.reasons,
+                )
+                for snapshot in result.snapshots
+            ),
+        )

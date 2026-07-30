@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 from datetime import datetime, timezone
 from decimal import Decimal
 from tempfile import TemporaryDirectory
@@ -8,6 +9,7 @@ from openpyxl import Workbook
 
 from trade_helper.ledger import Ledger
 from trade_helper.execution import Advice, AdviceStatus, ExecutionLedger
+from trade_helper.models import Quote
 from trade_helper.ui.controller import (
     AccountForm, DesktopController, PositionForm,
 )
@@ -97,3 +99,57 @@ class DesktopControllerTests(TestCase):
             ledger = Ledger(database)
             self.assertEqual(1, ledger.count("account_snapshots"))
             self.assertEqual(3, ledger.count("position_snapshots"))
+
+    def test_market_collection_returns_client_friendly_summary(self) -> None:
+        class Source:
+            def __init__(self, name: str, price: float) -> None:
+                self.name = name
+                self.price = price
+
+            def fetch(self, symbols: tuple[str, ...]) -> tuple[Quote, ...]:
+                now = datetime(
+                    2026, 7, 30, 14, 0, tzinfo=timezone.utc
+                )
+                return tuple(
+                    Quote(
+                        symbol, symbol, now, self.price, self.price,
+                        self.price, None, self.name,
+                    )
+                    for symbol in symbols
+                )
+
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            supplement = root / "market.json"
+            assets = {}
+            for asset_id in ("SP500", "NASDAQ", "DIVIDEND"):
+                assets[asset_id] = {
+                    "valuations": [
+                        {"source": "v1", "value": 2},
+                        {"source": "v2", "value": 2.001},
+                    ],
+                    "index": {"source": "index", "value": 100},
+                    "fx": {"source": "fx", "value": 7.1},
+                    "reference_value_cny": 100,
+                }
+            supplement.write_text(
+                json.dumps(
+                    {
+                        "observed_at": "2026-07-30T22:00:00+08:00",
+                        "assets": assets,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            controller = DesktopController(root / "account.db")
+
+            summary = controller.collect_market(
+                supplement,
+                Path(__file__).resolve().parents[1]
+                / "config" / "personal_v1.json",
+                sources=(Source("q1", 2), Source("q2", 2.001)),
+            )
+
+            self.assertTrue(summary.usable)
+            self.assertFalse(summary.degraded)
+            self.assertEqual(3, len(summary.snapshots))
