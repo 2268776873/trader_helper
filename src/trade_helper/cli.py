@@ -18,6 +18,12 @@ from trade_helper.replay import (
     load_replay_csv,
     write_replay_report,
 )
+from trade_helper.strategy_replay import (
+    load_historical_replay_csv,
+    load_replay_initial_account,
+    run_strategy_replay,
+    write_strategy_replay,
+)
 from trade_helper.doctor import run_doctor
 from trade_helper.config import load_strategy_config
 from trade_helper.decision_service import DailyDecisionService, DecisionInputError
@@ -95,6 +101,19 @@ def build_parser() -> argparse.ArgumentParser:
     )
     replay.add_argument("input", type=Path)
     replay.add_argument("--output", type=Path)
+    strategy_replay = subparsers.add_parser(
+        "strategy-replay",
+        help="run the frozen strategy against audited historical daily inputs",
+    )
+    strategy_replay.add_argument("input", type=Path)
+    strategy_replay.add_argument(
+        "--initial-account", type=Path, required=True
+    )
+    strategy_replay.add_argument(
+        "--config", type=Path, default=Path("config/personal_v1.json")
+    )
+    strategy_replay.add_argument("--output", type=Path, required=True)
+    strategy_replay.add_argument("--trajectory", type=Path)
     sensitivity = subparsers.add_parser(
         "sensitivity-report",
         help="compare complete replay metrics across parameter variants",
@@ -156,6 +175,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.output:
             write_replay_report(metrics, args.output)
         print(json.dumps(metrics.to_dict(), ensure_ascii=False, indent=2))
+        return 0
+    if args.command == "strategy-replay":
+        config = load_strategy_config(args.config)
+        result = run_strategy_replay(
+            config,
+            load_historical_replay_csv(args.input, config),
+            load_replay_initial_account(args.initial_account, config),
+        )
+        write_strategy_replay(result, args.output, args.trajectory)
+        print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
         return 0
     if args.command == "sensitivity-report":
         variants = tuple(

@@ -61,6 +61,18 @@ python -m trade_helper.cli shadow-report --database .\var\account.db --output .\
 python -m trade_helper.cli replay-report .\var\replay.csv --output .\var\replay-report.json
 ```
 
+使用逐日历史输入真正执行冻结策略（而非仅统计预制净值曲线）：
+
+```powershell
+python -m trade_helper.cli strategy-replay .\data\history.csv `
+  --initial-account .\config\replay_initial_account.example.json `
+  --output .\var\strategy-replay.json `
+  --trajectory .\var\strategy-replay-trajectory.csv
+```
+
+输入字段、无前视约束和成交代理假设见
+[`docs/strategy_replay.md`](docs/strategy_replay.md)。
+
 多个回放结果可生成参数敏感性报告；输入文件名（不含扩展名）作为方案名：
 
 ```powershell
