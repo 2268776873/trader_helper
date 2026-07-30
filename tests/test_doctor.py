@@ -34,3 +34,7 @@ class DoctorTests(TestCase):
 
         self.assertTrue(report.ready)
         self.assertFalse(any(item.status == "FAIL" for item in report.checks))
+        schema = next(
+            item for item in report.checks if item.name == "schema_version"
+        )
+        self.assertEqual("PASS", schema.status)

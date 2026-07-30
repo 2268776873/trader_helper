@@ -7,7 +7,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from trade_helper.config import ConfigError, load_strategy_config
-from trade_helper.ledger import Ledger
+from trade_helper.ledger import CURRENT_SCHEMA_VERSION, Ledger
 
 
 @dataclass(frozen=True)
@@ -74,9 +74,24 @@ def run_doctor(
                 )
                 """
             ).fetchone()[0]
+            schema_version = int(
+                connection.execute(
+                    """
+                    SELECT value FROM schema_metadata
+                    WHERE key = 'schema_version'
+                    """
+                ).fetchone()[0]
+            )
     except sqlite3.Error as error:
         checks.append(CheckResult("database", "FAIL", str(error)))
         return DoctorReport(False, tuple(checks))
+    checks.append(
+        CheckResult(
+            "schema_version",
+            "PASS" if schema_version == CURRENT_SCHEMA_VERSION else "FAIL",
+            f"数据库 V{schema_version} / 程序 V{CURRENT_SCHEMA_VERSION}",
+        )
+    )
     checks.append(
         CheckResult(
             "database", "PASS" if integrity == "ok" else "FAIL",

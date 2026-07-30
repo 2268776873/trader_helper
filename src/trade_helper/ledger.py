@@ -11,6 +11,9 @@ from pathlib import Path
 from typing import Iterator
 
 
+CURRENT_SCHEMA_VERSION = 6
+
+
 class LedgerConflict(RuntimeError):
     """Raised when an immutable ledger identifier is reused."""
 
