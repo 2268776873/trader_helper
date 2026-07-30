@@ -27,3 +27,13 @@ python -m trade_helper.cli strategy-replay .\data\history.csv `
 
 2000 年互联网泡沫、2008 年金融危机、2022 年下跌和长期上涨区间必须使用可审计的
 真实历史输入分别运行。仓库中的示例初始账户不是历史行情，也不能替代这些验收数据。
+
+四个强制区间可以用套件清单一次执行：
+
+```powershell
+python -m trade_helper.cli replay-suite .\config\replay_suite.example.json `
+  --output .\var\replay-suite.json
+```
+
+套件拒绝缺少或多出强制场景的清单，并要求每个场景填写数据来源说明。报告记录每份
+输入 CSV 的 SHA-256，保证评审时可以确认使用的是同一份历史输入。

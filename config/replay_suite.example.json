@@ -1,0 +1,28 @@
+{
+  "scenarios": [
+    {
+      "scenario_id": "DOT_COM_2000",
+      "input": "../data/replay/dot-com-2000.csv",
+      "initial_account": "replay_initial_account.example.json",
+      "source_notes": "填写指数、ETF可执行价格、估值代理的来源与转换方法"
+    },
+    {
+      "scenario_id": "GFC_2008",
+      "input": "../data/replay/gfc-2008.csv",
+      "initial_account": "replay_initial_account.example.json",
+      "source_notes": "填写指数、ETF可执行价格、估值代理的来源与转换方法"
+    },
+    {
+      "scenario_id": "DRAWDOWN_2022",
+      "input": "../data/replay/drawdown-2022.csv",
+      "initial_account": "replay_initial_account.example.json",
+      "source_notes": "填写指数、ETF可执行价格、估值代理的来源与转换方法"
+    },
+    {
+      "scenario_id": "LONG_UPTREND",
+      "input": "../data/replay/long-uptrend.csv",
+      "initial_account": "replay_initial_account.example.json",
+      "source_notes": "填写指数、ETF可执行价格、估值代理的来源与转换方法"
+    }
+  ]
+}

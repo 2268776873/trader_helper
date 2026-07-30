@@ -24,6 +24,7 @@ from trade_helper.strategy_replay import (
     run_strategy_replay,
     write_strategy_replay,
 )
+from trade_helper.replay_suite import run_replay_suite, write_replay_suite
 from trade_helper.doctor import run_doctor
 from trade_helper.config import load_strategy_config
 from trade_helper.decision_service import DailyDecisionService, DecisionInputError
@@ -114,6 +115,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
     strategy_replay.add_argument("--output", type=Path, required=True)
     strategy_replay.add_argument("--trajectory", type=Path)
+    replay_suite = subparsers.add_parser(
+        "replay-suite",
+        help="run all mandatory audited historical stress scenarios",
+    )
+    replay_suite.add_argument("manifest", type=Path)
+    replay_suite.add_argument(
+        "--config", type=Path, default=Path("config/personal_v1.json")
+    )
+    replay_suite.add_argument("--output", type=Path, required=True)
     sensitivity = subparsers.add_parser(
         "sensitivity-report",
         help="compare complete replay metrics across parameter variants",
@@ -184,6 +194,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             load_replay_initial_account(args.initial_account, config),
         )
         write_strategy_replay(result, args.output, args.trajectory)
+        print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
+        return 0
+    if args.command == "replay-suite":
+        result = run_replay_suite(
+            args.manifest, load_strategy_config(args.config)
+        )
+        write_replay_suite(result, args.output)
         print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
         return 0
     if args.command == "sensitivity-report":
