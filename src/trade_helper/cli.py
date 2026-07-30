@@ -10,6 +10,7 @@ from typing import Sequence
 from trade_helper.feasibility import assess_quote, overall_readiness
 from trade_helper.excel_import import commit_preview, preview_workbook
 from trade_helper.ledger import Ledger, LedgerConflict
+from trade_helper.backup import BackupError, create_backup, restore_backup
 from trade_helper.models import ProbeResult, Readiness
 from trade_helper.providers.sina import SinaError, SinaEtfProvider
 
@@ -60,11 +61,35 @@ def build_parser() -> argparse.ArgumentParser:
     )
     excel_import.add_argument("workbook", type=Path)
     excel_import.add_argument("--database", type=Path, required=True)
+    backup = subparsers.add_parser("backup", help="create a verified local backup")
+    backup.add_argument("--database", type=Path, required=True)
+    backup.add_argument("--output", type=Path, required=True)
+    restore = subparsers.add_parser("restore", help="verify and restore a local backup")
+    restore.add_argument("backup", type=Path)
+    restore.add_argument("--database", type=Path, required=True)
     return parser
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    if args.command in {"backup", "restore"}:
+        try:
+            manifest = (
+                create_backup(args.database, args.output)
+                if args.command == "backup"
+                else restore_backup(args.backup, args.database)
+            )
+        except BackupError as error:
+            print(json.dumps({"ok": False, "error": str(error)}, ensure_ascii=False))
+            return 4
+        print(
+            json.dumps(
+                {"ok": True, "manifest": asdict(manifest)},
+                ensure_ascii=False, indent=2,
+            )
+        )
+        return 0
+
     if args.command in {"excel-preview", "excel-import"}:
         preview = preview_workbook(args.workbook)
         payload: dict[str, object] = {

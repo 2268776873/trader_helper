@@ -38,6 +38,16 @@ python -m trade_helper.cli excel-import .\outputs\account_template\trade_helper_
 python -m trade_helper.ui.app
 ```
 
+创建经过 SQLite 完整性检查和 SHA-256 校验的本地备份：
+
+```powershell
+python -m trade_helper.cli backup --database .\var\account.db --output .\var\backups\account.thbackup
+python -m trade_helper.cli restore .\var\backups\account.thbackup --database .\var\account-restored.db
+```
+
+恢复操作会先在临时目录校验归档结构、文件大小、内容哈希和 SQLite 完整性，全部
+通过后才替换目标数据库。
+
 也可以使用 Windows 脚本，并在未配置 PATH 时传入 Python 完整路径：
 
 ```powershell
