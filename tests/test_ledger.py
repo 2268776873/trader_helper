@@ -124,6 +124,12 @@ class LedgerTests(TestCase):
         version = connection.execute(
             "SELECT value FROM schema_metadata WHERE key = 'schema_version'"
         ).fetchone()[0]
+        advice_columns = {
+            row[1]
+            for row in connection.execute("PRAGMA table_info(advice)").fetchall()
+        }
         connection.close()
         self.assertIn("sort_order", columns)
-        self.assertEqual("5", version)
+        self.assertEqual("6", version)
+        self.assertIn("level_id", advice_columns)
+        self.assertIn("funding_pool", advice_columns)

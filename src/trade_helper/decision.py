@@ -158,8 +158,9 @@ class DecisionStore:
                             INSERT INTO advice(
                                 advice_id, created_at, config_version, asset_id,
                                 etf_code, side, proposed_quantity,
-                                limit_price_milli, status, reason
-                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                limit_price_milli, status, reason, level_id,
+                                funding_pool
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                             """,
                             (
                                 f"{outcome.decision_id}-A{index}",
@@ -172,6 +173,8 @@ class DecisionStore:
                                 int(item.limit_price * 1000),
                                 AdviceStatus.PENDING_CONFIRMATION.value,
                                 "；".join(item.reasons),
+                                item.level_id,
+                                "TACTICAL" if item.level_id else "BASE",
                             ),
                         )
         except sqlite3.IntegrityError as error:

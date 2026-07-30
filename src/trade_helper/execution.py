@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 from contextlib import closing
 from dataclasses import dataclass
@@ -7,7 +8,9 @@ from datetime import datetime
 from decimal import Decimal
 from enum import StrEnum
 
-from trade_helper.ledger import Ledger, LedgerConflict, _iso, price_to_milli
+from trade_helper.ledger import (
+    Ledger, LedgerConflict, _iso, cny_to_fen, price_to_milli,
+)
 
 
 class AdviceStatus(StrEnum):
@@ -32,6 +35,8 @@ class Advice:
     proposed_quantity: int
     limit_price: Decimal
     reason: str
+    level_id: str | None = None
+    funding_pool: str | None = None
 
 
 @dataclass(frozen=True)
@@ -69,8 +74,9 @@ class ExecutionLedger:
                     """
                     INSERT INTO advice(
                         advice_id, created_at, config_version, asset_id, etf_code,
-                        side, proposed_quantity, limit_price_milli, status, reason
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        side, proposed_quantity, limit_price_milli, status, reason,
+                        level_id, funding_pool
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         advice.advice_id, _iso(advice.created_at),
@@ -78,6 +84,7 @@ class ExecutionLedger:
                         advice.side, advice.proposed_quantity,
                         price_to_milli(advice.limit_price),
                         AdviceStatus.PENDING_CONFIRMATION.value, advice.reason,
+                        advice.level_id, advice.funding_pool,
                     ),
                 )
         except sqlite3.IntegrityError as error:
@@ -130,7 +137,8 @@ class ExecutionLedger:
             with self.ledger.transaction() as connection:
                 advice = connection.execute(
                     """
-                    SELECT asset_id, etf_code, side, proposed_quantity
+                    SELECT asset_id, etf_code, side, proposed_quantity,
+                           config_version, level_id, funding_pool
                     FROM advice WHERE advice_id = ?
                     """,
                     (fill.advice_id,),
@@ -159,6 +167,13 @@ class ExecutionLedger:
                     if total == int(advice["proposed_quantity"])
                     else AdviceStatus.PARTIALLY_FILLED
                 )
+                actual_fen = cny_to_fen(
+                    Decimal(fill.quantity) * fill.price
+                )
+                if advice["side"] == "BUY" and advice["funding_pool"]:
+                    self._apply_buy_fill_state(
+                        connection, advice, actual_fen, status, fill.filled_at
+                    )
                 connection.execute(
                     """
                     INSERT INTO advice_fills(
@@ -190,6 +205,109 @@ class ExecutionLedger:
                 return status
         except sqlite3.IntegrityError as error:
             raise LedgerConflict(f"fill conflict: {fill.fill_id}") from error
+
+    @staticmethod
+    def _apply_buy_fill_state(
+        connection: sqlite3.Connection,
+        advice: sqlite3.Row,
+        actual_fen: int,
+        advice_status: AdviceStatus,
+        filled_at: datetime,
+    ) -> None:
+        runtime = connection.execute(
+            "SELECT * FROM strategy_runtime WHERE runtime_id = 1"
+        ).fetchone()
+        if runtime is None:
+            raise ValueError("strategy runtime is not initialized")
+        pool = advice["funding_pool"]
+        if pool == "BASE":
+            if (
+                int(runtime["base_pool_fen"]) < actual_fen
+                or int(runtime["base_budget_fen"]) < actual_fen
+            ):
+                raise ValueError("base funding pool is insufficient for fill")
+            connection.execute(
+                """
+                UPDATE strategy_runtime SET
+                    base_pool_fen = base_pool_fen - ?,
+                    base_budget_fen = base_budget_fen - ?,
+                    updated_at = ?
+                WHERE runtime_id = 1
+                """,
+                (actual_fen, actual_fen, _iso(filled_at)),
+            )
+            return
+        if pool != "TACTICAL":
+            raise ValueError(f"unknown advice funding pool: {pool}")
+        level_id = advice["level_id"]
+        if not level_id:
+            raise ValueError("tactical advice is missing level_id")
+        column_by_asset = {
+            "SP500": "tactical_sp_fen",
+            "NASDAQ": "tactical_nd_fen",
+            "DIVIDEND": "tactical_dv_fen",
+        }
+        column = column_by_asset.get(advice["asset_id"])
+        if column is None:
+            raise ValueError("tactical advice has unknown asset")
+        if int(runtime[column]) < actual_fen:
+            raise ValueError("tactical funding pool is insufficient for fill")
+        level = connection.execute(
+            """
+            SELECT filled_fen FROM tactical_level_state
+            WHERE asset_id = ? AND level_id = ?
+            """,
+            (advice["asset_id"], level_id),
+        ).fetchone()
+        if level is None:
+            raise ValueError("tactical level state is missing")
+        config_row = connection.execute(
+            "SELECT content_json FROM config_versions WHERE config_version = ?",
+            (advice["config_version"],),
+        ).fetchone()
+        if config_row is None:
+            raise ValueError("advice config version is missing")
+        config = json.loads(config_row["content_json"])
+        configured_level = next(
+            (
+                item
+                for item in config["tactical_levels"][advice["asset_id"]]
+                if item["level_id"] == level_id
+            ),
+            None,
+        )
+        if configured_level is None:
+            raise ValueError("advice level is absent from its config version")
+        planned_fen = cny_to_fen(configured_level["amount_cny"])
+        filled_fen = min(
+            planned_fen, int(level["filled_fen"]) + actual_fen
+        )
+        level_status = (
+            "FILLED"
+            if advice_status == AdviceStatus.FILLED
+            or filled_fen >= planned_fen
+            else "PARTIALLY_FILLED"
+        )
+        connection.execute(
+            f"""
+            UPDATE strategy_runtime SET
+                {column} = {column} - ?,
+                updated_at = ?
+            WHERE runtime_id = 1
+            """,
+            (actual_fen, _iso(filled_at)),
+        )
+        connection.execute(
+            """
+            UPDATE tactical_level_state SET
+                status = ?, filled_fen = ?, updated_at = ?
+            WHERE asset_id = ? AND level_id = ?
+            """,
+            (
+                level_status, filled_fen, _iso(filled_at),
+                advice["asset_id"], level_id,
+            ),
+        )
 
     def status(self, advice_id: str) -> AdviceStatus:
         with closing(self.ledger.connect()) as connection:

@@ -1,9 +1,11 @@
 from datetime import datetime, timezone
+from dataclasses import replace
 from decimal import Decimal
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import TestCase
 
+from trade_helper.config import load_strategy_config
 from trade_helper.execution import (
     Advice,
     AdviceStatus,
@@ -12,6 +14,11 @@ from trade_helper.execution import (
     OrderAttempt,
 )
 from trade_helper.ledger import Ledger
+from trade_helper.state_store import StrategyStateStore
+from trade_helper.strategy import BaseBudgetState
+
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 class ExecutionLedgerTests(TestCase):
@@ -63,3 +70,79 @@ class ExecutionLedgerTests(TestCase):
                 Fill("FILL-X", "ADV-1", self.now, 1100, Decimal("1.498"))
             )
         self.assertEqual(0, self.ledger.count("trades"))
+
+    def test_tactical_fill_atomically_updates_pool_and_level_state(self) -> None:
+        config = load_strategy_config(ROOT / "config" / "personal_v1.json")
+        store = StrategyStateStore(self.ledger)
+        initial = store.initialize_runtime(config)
+        self.execution.create_advice(
+            Advice(
+                "ADV-TACTICAL", self.now, config.config_version,
+                "DIVIDEND", "515450", "BUY", 5000, Decimal("2"),
+                "tactical test", "DV_L1", "TACTICAL",
+            )
+        )
+
+        self.execution.record_fill(
+            Fill(
+                "FILL-TACTICAL-1", "ADV-TACTICAL", self.now,
+                2000, Decimal("2"),
+            )
+        )
+        partial = store.load_runtime()
+        level = next(
+            item
+            for item in partial.tactical_levels
+            if item.asset_id == "DIVIDEND" and item.level_id == "DV_L1"
+        )
+        self.assertEqual("PARTIALLY_FILLED", level.status)
+        self.assertEqual(Decimal("4000"), level.filled_cny)
+        self.assertEqual(
+            initial.cash_pools.tactical_dv_cny - Decimal("4000"),
+            partial.cash_pools.tactical_dv_cny,
+        )
+
+        self.execution.record_fill(
+            Fill(
+                "FILL-TACTICAL-2", "ADV-TACTICAL", self.now,
+                3000, Decimal("2"),
+            )
+        )
+        completed = store.load_runtime()
+        level = next(
+            item
+            for item in completed.tactical_levels
+            if item.asset_id == "DIVIDEND" and item.level_id == "DV_L1"
+        )
+        self.assertEqual("FILLED", level.status)
+        self.assertEqual(Decimal("10000"), level.filled_cny)
+
+    def test_base_fill_updates_released_budget_and_base_pool(self) -> None:
+        config = load_strategy_config(ROOT / "config" / "personal_v1.json")
+        store = StrategyStateStore(self.ledger)
+        initial = store.initialize_runtime(config)
+        released = replace(
+            initial,
+            base_budget=BaseBudgetState(
+                Decimal("12500"), frozenset({"2026-09"})
+            ),
+        )
+        store.save_runtime(released)
+        self.execution.create_advice(
+            Advice(
+                "ADV-BASE", self.now, config.config_version,
+                "SP500", "513500", "BUY", 2500, Decimal("2"),
+                "base test", None, "BASE",
+            )
+        )
+
+        self.execution.record_fill(
+            Fill("FILL-BASE", "ADV-BASE", self.now, 2500, Decimal("2"))
+        )
+
+        completed = store.load_runtime()
+        self.assertEqual(Decimal("7500"), completed.base_budget.available_cny)
+        self.assertEqual(
+            initial.cash_pools.base_cny - Decimal("5000"),
+            completed.cash_pools.base_cny,
+        )

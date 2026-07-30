@@ -84,6 +84,15 @@ class DecisionTests(TestCase):
         self.assertEqual(Decimal("12500"), self.states.load_runtime().base_budget.available_cny)
         self.assertEqual(1, self.ledger.count("decision_runs"))
         self.assertEqual(1, self.ledger.count("advice"))
+        connection = self.ledger.connect()
+        try:
+            advice = connection.execute(
+                "SELECT level_id, funding_pool FROM advice"
+            ).fetchone()
+        finally:
+            connection.close()
+        self.assertIsNone(advice["level_id"])
+        self.assertEqual("BASE", advice["funding_pool"])
 
     def test_market_block_precedes_strategy(self) -> None:
         request = self.request()

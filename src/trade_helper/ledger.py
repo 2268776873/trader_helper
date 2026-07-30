@@ -96,7 +96,7 @@ class Ledger:
                     value TEXT NOT NULL
                 );
                 INSERT OR REPLACE INTO schema_metadata(key, value)
-                VALUES ('schema_version', '5');
+                VALUES ('schema_version', '6');
 
                 CREATE TABLE IF NOT EXISTS account_snapshots (
                     snapshot_id TEXT PRIMARY KEY,
@@ -161,7 +161,9 @@ class Ledger:
                     proposed_quantity INTEGER NOT NULL CHECK(proposed_quantity > 0),
                     limit_price_milli INTEGER NOT NULL CHECK(limit_price_milli > 0),
                     status TEXT NOT NULL,
-                    reason TEXT NOT NULL
+                    reason TEXT NOT NULL,
+                    level_id TEXT,
+                    funding_pool TEXT
                 );
 
                 CREATE TABLE IF NOT EXISTS order_attempts (
@@ -283,6 +285,20 @@ class Ledger:
                             (index, row["rowid"])
                             for index, row in enumerate(legacy_rows)
                         ],
+                    )
+                advice_columns = {
+                    row["name"]
+                    for row in connection.execute(
+                        "PRAGMA table_info(advice)"
+                    ).fetchall()
+                }
+                if "level_id" not in advice_columns:
+                    connection.execute(
+                        "ALTER TABLE advice ADD COLUMN level_id TEXT"
+                    )
+                if "funding_pool" not in advice_columns:
+                    connection.execute(
+                        "ALTER TABLE advice ADD COLUMN funding_pool TEXT"
                     )
 
     def apply_import_batch(
