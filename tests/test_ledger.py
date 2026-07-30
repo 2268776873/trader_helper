@@ -3,6 +3,7 @@ from decimal import Decimal
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import TestCase
+import sqlite3
 
 from trade_helper.ledger import (
     AccountSnapshot,
@@ -90,3 +91,39 @@ class LedgerTests(TestCase):
         )
 
         self.assertEqual(1, self.ledger.count("cash_flows"))
+
+    def test_initialize_migrates_legacy_tactical_state_and_schema_version(self) -> None:
+        legacy = Path(self.directory.name) / "legacy.db"
+        connection = sqlite3.connect(legacy)
+        connection.executescript(
+            """
+            CREATE TABLE tactical_level_state (
+                asset_id TEXT NOT NULL,
+                level_id TEXT NOT NULL,
+                status TEXT NOT NULL,
+                filled_fen INTEGER NOT NULL,
+                near_high_days INTEGER NOT NULL,
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY(asset_id, level_id)
+            );
+            INSERT INTO tactical_level_state VALUES
+                ('SP500', 'SP_L1', 'ARMED', 0, 0, '2026-07-30');
+            """
+        )
+        connection.close()
+
+        Ledger(legacy).initialize()
+
+        connection = sqlite3.connect(legacy)
+        columns = {
+            row[1]
+            for row in connection.execute(
+                "PRAGMA table_info(tactical_level_state)"
+            )
+        }
+        version = connection.execute(
+            "SELECT value FROM schema_metadata WHERE key = 'schema_version'"
+        ).fetchone()[0]
+        connection.close()
+        self.assertIn("sort_order", columns)
+        self.assertEqual("5", version)

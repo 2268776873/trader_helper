@@ -96,7 +96,7 @@ class Ledger:
                     value TEXT NOT NULL
                 );
                 INSERT OR REPLACE INTO schema_metadata(key, value)
-                VALUES ('schema_version', '1');
+                VALUES ('schema_version', '5');
 
                 CREATE TABLE IF NOT EXISTS account_snapshots (
                     snapshot_id TEXT PRIMARY KEY,
@@ -255,6 +255,35 @@ class Ledger:
                 );
                     """
                 )
+                columns = {
+                    row["name"]
+                    for row in connection.execute(
+                        "PRAGMA table_info(tactical_level_state)"
+                    ).fetchall()
+                }
+                if "sort_order" not in columns:
+                    connection.execute(
+                        """
+                        ALTER TABLE tactical_level_state
+                        ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0
+                        """
+                    )
+                    legacy_rows = connection.execute(
+                        """
+                        SELECT rowid FROM tactical_level_state
+                        ORDER BY asset_id, level_id
+                        """
+                    ).fetchall()
+                    connection.executemany(
+                        """
+                        UPDATE tactical_level_state
+                        SET sort_order = ? WHERE rowid = ?
+                        """,
+                        [
+                            (index, row["rowid"])
+                            for index, row in enumerate(legacy_rows)
+                        ],
+                    )
 
     def apply_import_batch(
         self,
