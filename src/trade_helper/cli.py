@@ -22,6 +22,10 @@ from trade_helper.doctor import run_doctor
 from trade_helper.config import load_strategy_config
 from trade_helper.decision_service import DailyDecisionService, DecisionInputError
 from trade_helper.trading_calendar import TradingCalendarStore, load_calendar_csv
+from trade_helper.market_collection import (
+    MarketCollectionService,
+    load_manual_supplement,
+)
 from trade_helper.models import ProbeResult, Readiness
 from trade_helper.providers.sina import SinaError, SinaEtfProvider
 
@@ -109,6 +113,15 @@ def build_parser() -> argparse.ArgumentParser:
     daily.add_argument(
         "--config", type=Path, default=Path("config/personal_v1.json")
     )
+    collect = subparsers.add_parser(
+        "market-collect",
+        help="collect public quotes plus audited manual valuation supplements",
+    )
+    collect.add_argument("supplement", type=Path)
+    collect.add_argument("--database", type=Path, required=True)
+    collect.add_argument(
+        "--config", type=Path, default=Path("config/personal_v1.json")
+    )
     return parser
 
 
@@ -178,6 +191,32 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
         )
         return 0
+    if args.command == "market-collect":
+        observed_at, supplements = load_manual_supplement(args.supplement)
+        ledger = Ledger(args.database)
+        ledger.initialize()
+        result = MarketCollectionService(
+            ledger, load_strategy_config(args.config)
+        ).collect(observed_at=observed_at, supplements=supplements)
+        print(
+            json.dumps(
+                {
+                    "ok": not result.source_errors,
+                    "source_errors": result.source_errors,
+                    "snapshots": [
+                        {
+                            "symbol": item.symbol,
+                            "readiness": item.readiness.value,
+                            "reasons": item.reasons,
+                        }
+                        for item in result.snapshots
+                    ],
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 0 if not result.source_errors else 8
 
     if args.command in {"backup", "restore"}:
         try:

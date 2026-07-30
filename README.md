@@ -75,6 +75,17 @@ python -m trade_helper.cli calendar-import .\config\a_share_calendar.csv --datab
 .\scripts\run_daily_decision.ps1 -Python C:\path\to\python.exe
 ```
 
+生产采集会自动请求新浪和东方财富公开行情，并读取人工复核补充文件中的双估值、
+指数、汇率、公告及人民币参考价值。示例位于
+`config/market_supplement.example.json`：
+
+```powershell
+python -m trade_helper.cli market-collect .\config\market_supplement.example.json --database .\var\account.db
+```
+
+任一行情源失败、双估值缺失或冲突、公告阻断时仍会保存原始快照，但状态为
+`BLOCKED`，不会生成可执行建议。
+
 也可以使用 Windows 脚本，并在未配置 PATH 时传入 Python 完整路径：
 
 ```powershell
