@@ -73,6 +73,17 @@ python -m trade_helper.cli strategy-replay .\data\history.csv `
 输入字段、无前视约束和成交代理假设见
 [`docs/strategy_replay.md`](docs/strategy_replay.md)。
 
+发布前可一次执行数据库诊断、20日影子验收、四区间历史回放和备份恢复复验：
+
+```powershell
+python -m trade_helper.cli release-readiness `
+  --database .\var\account.db `
+  --replay-suite .\config\replay_suite.json `
+  --output .\var\release-readiness.json
+```
+
+该命令不会启动桌面客户端；干净 Windows、DPI 和真实账户核对仍会作为人工门禁列出。
+
 多个回放结果可生成参数敏感性报告；输入文件名（不含扩展名）作为方案名：
 
 ```powershell

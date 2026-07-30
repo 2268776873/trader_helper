@@ -91,7 +91,8 @@ Trade Helper 是 Windows 本地低频 ETF 仓位管理助手。它只生成可�
 ## 5. 历史与影子运行
 
 - 点击侧边栏“历史审计”查看决策、成交和资金流水时间线。
-- 运行 `shadow-report` 查看是否达到20个交易日验收门。
+- 运行 `shadow-report` 查看“20日覆盖”和“验收通过”两个状态。达到天数但仍有
+  未处置建议、重复成功决策或交易日历异常时，不会通过验收。
 - 影子运行阶段只生成建议，不依赖程序执行真实订单。
 - 回放报告必须同时检查收益、最大回撤、波动、换手和现金占用。
 
@@ -100,22 +101,34 @@ Trade Helper 是 Windows 本地低频 ETF 仓位管理助手。它只生成可�
 建议每次账户导入、配置切换和实际成交回填后创建备份：
 
 ```powershell
-python -m trade_helper.cli backup --database .\var\account.db --output .\var\backups\account.thbackup
+.\TradeHelperCLI.exe backup --database .\var\account.db --output .\var\backups\account.thbackup
 ```
 
 恢复前先关闭客户端。建议优先恢复到新的数据库路径验证：
 
 ```powershell
-python -m trade_helper.cli restore .\var\backups\account.thbackup --database .\var\restored.db
-python -m trade_helper.cli doctor --database .\var\restored.db
+.\TradeHelperCLI.exe restore .\var\backups\account.thbackup --database .\var\restored.db
+.\TradeHelperCLI.exe doctor --database .\var\restored.db --config .\config\personal_v1.json
 ```
+
+## 7. 发布前验收
+
+`release-readiness` 会在不启动客户端的情况下统一检查：
+
+- 数据库、冻结配置和运行状态；
+- 影子运行的覆盖天数与审计完整性；
+- 四个强制历史压力区间；
+- 临时目录中的备份、恢复和恢复后数据库诊断。
+
+自动门禁通过不等于正式发布完成。报告会继续列出干净 Windows 10/11、125%/150%
+DPI、真实账户核对、未签名提示与人工下单政策等人工门禁。
 
 备份包含本地账户数据库，必须按个人财务数据妥善保管。
 
-## 7. 故障自检
+## 8. 故障自检
 
 ```powershell
-python -m trade_helper.cli doctor --database .\var\account.db
+.\TradeHelperCLI.exe doctor --database .\var\account.db --config .\config\personal_v1.json
 python -m unittest discover -s tests
 ```
 

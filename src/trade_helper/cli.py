@@ -25,6 +25,7 @@ from trade_helper.strategy_replay import (
     write_strategy_replay,
 )
 from trade_helper.replay_suite import run_replay_suite, write_replay_suite
+from trade_helper.release_readiness import build_release_readiness
 from trade_helper.doctor import run_doctor
 from trade_helper.config import load_strategy_config
 from trade_helper.decision_service import DailyDecisionService, DecisionInputError
@@ -124,6 +125,17 @@ def build_parser() -> argparse.ArgumentParser:
         "--config", type=Path, default=Path("config/personal_v1.json")
     )
     replay_suite.add_argument("--output", type=Path, required=True)
+    readiness = subparsers.add_parser(
+        "release-readiness",
+        help="run automated release gates without launching the desktop client",
+    )
+    readiness.add_argument("--database", type=Path, required=True)
+    readiness.add_argument(
+        "--config", type=Path, default=Path("config/personal_v1.json")
+    )
+    readiness.add_argument("--replay-suite", type=Path, required=True)
+    readiness.add_argument("--required-shadow-days", type=int, default=20)
+    readiness.add_argument("--output", type=Path)
     sensitivity = subparsers.add_parser(
         "sensitivity-report",
         help="compare complete replay metrics across parameter variants",
@@ -203,6 +215,21 @@ def main(argv: Sequence[str] | None = None) -> int:
         write_replay_suite(result, args.output)
         print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
         return 0
+    if args.command == "release-readiness":
+        result = build_release_readiness(
+            args.database,
+            args.config,
+            args.replay_suite,
+            required_shadow_days=args.required_shadow_days,
+        )
+        rendered = json.dumps(
+            result.to_dict(), ensure_ascii=False, indent=2
+        )
+        if args.output:
+            args.output.parent.mkdir(parents=True, exist_ok=True)
+            args.output.write_text(rendered + "\n", encoding="utf-8")
+        print(rendered)
+        return 0 if result.automated_ready else 7
     if args.command == "sensitivity-report":
         variants = tuple(
             SensitivityVariant(

@@ -40,6 +40,7 @@ Name: "desktopicon"; Description: "创建桌面快捷方式"; GroupDescription: 
 
 [Files]
 Source: "{#MyReleaseRoot}\TradeHelper.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#MyReleaseRoot}\TradeHelperCLI.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#MyReleaseRoot}\release-manifest.json"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#MyReleaseRoot}\docs\*"; DestDir: "{app}\docs"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "{#MyReleaseRoot}\config\*"; DestDir: "{app}\config"; Flags: ignoreversion recursesubdirs createallsubdirs

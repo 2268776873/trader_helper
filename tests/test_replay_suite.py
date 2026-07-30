@@ -1,10 +1,16 @@
 import json
+from datetime import date
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import TestCase
+from unittest.mock import patch
 
 from trade_helper.config import load_strategy_config
-from trade_helper.replay_suite import REQUIRED_SCENARIOS, run_replay_suite
+from trade_helper.replay_suite import (
+    REQUIRED_SCENARIOS,
+    _validate_scenario_period,
+    run_replay_suite,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -84,7 +90,10 @@ class ReplaySuiteTests(TestCase):
             encoding="utf-8",
         )
 
-        result = run_replay_suite(manifest, self.config)
+        with patch(
+            "trade_helper.replay_suite._validate_scenario_period"
+        ):
+            result = run_replay_suite(manifest, self.config)
         payload = result.to_dict()
 
         self.assertTrue(payload["coverage"]["complete"])
@@ -111,3 +120,12 @@ class ReplaySuiteTests(TestCase):
 
         with self.assertRaisesRegex(ValueError, "source_notes"):
             run_replay_suite(manifest, self.config)
+
+    def test_rejects_short_or_wrong_historical_period(self) -> None:
+        with self.assertRaisesRegex(ValueError, "coverage is insufficient"):
+            _validate_scenario_period(
+                "DOT_COM_2000",
+                date(2024, 1, 1),
+                date(2024, 1, 2),
+                2,
+            )

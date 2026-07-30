@@ -6,7 +6,11 @@ from unittest import TestCase
 import zipfile
 
 from trade_helper.backup import BackupError, create_backup, restore_backup
-from trade_helper.ledger import AccountSnapshot, Ledger
+from trade_helper.ledger import (
+    CURRENT_SCHEMA_VERSION,
+    AccountSnapshot,
+    Ledger,
+)
 
 
 class BackupTests(TestCase):
@@ -29,6 +33,7 @@ class BackupTests(TestCase):
             restored_manifest = restore_backup(archive, restored)
 
             self.assertEqual(manifest, restored_manifest)
+            self.assertEqual(CURRENT_SCHEMA_VERSION, manifest.schema_version)
             self.assertEqual(1, Ledger(restored).count("account_snapshots"))
 
     def test_tampered_backup_is_rejected_before_destination_changes(self) -> None:
@@ -46,3 +51,20 @@ class BackupTests(TestCase):
                 restore_backup(archive, destination)
 
             self.assertFalse(destination.exists())
+
+    def test_future_database_schema_cannot_be_backed_up(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source.db"
+            ledger = Ledger(source)
+            ledger.initialize()
+            with ledger.transaction() as connection:
+                connection.execute(
+                    """
+                    UPDATE schema_metadata SET value = '999'
+                    WHERE key = 'schema_version'
+                    """
+                )
+
+            with self.assertRaisesRegex(BackupError, "newer than program"):
+                create_backup(source, root / "future.thbackup")

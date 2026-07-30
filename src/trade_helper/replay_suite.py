@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 
 from trade_helper.config import StrategyConfig
@@ -17,6 +18,27 @@ from trade_helper.strategy_replay import (
 REQUIRED_SCENARIOS = frozenset(
     {"DOT_COM_2000", "GFC_2008", "DRAWDOWN_2022", "LONG_UPTREND"}
 )
+
+
+@dataclass(frozen=True)
+class ScenarioRequirement:
+    latest_start: date | None
+    earliest_end: date | None
+    minimum_trading_days: int
+
+
+SCENARIO_REQUIREMENTS = {
+    "DOT_COM_2000": ScenarioRequirement(
+        date(2000, 3, 10), date(2002, 10, 9), 500
+    ),
+    "GFC_2008": ScenarioRequirement(
+        date(2007, 10, 9), date(2009, 3, 9), 300
+    ),
+    "DRAWDOWN_2022": ScenarioRequirement(
+        date(2022, 1, 3), date(2022, 12, 30), 200
+    ),
+    "LONG_UPTREND": ScenarioRequirement(None, None, 500),
+}
 
 
 @dataclass(frozen=True)
@@ -96,9 +118,16 @@ def run_replay_suite(
             manifest, entry.get("initial_account")
         )
         raw = input_path.read_bytes()
+        historical_days = load_historical_replay_csv(input_path, config)
+        _validate_scenario_period(
+            entry["scenario_id"],
+            historical_days[0].trading_date,
+            historical_days[-1].trading_date,
+            len(historical_days),
+        )
         replay = run_strategy_replay(
             config,
-            load_historical_replay_csv(input_path, config),
+            historical_days,
             load_replay_initial_account(account_path, config),
         )
         results.append(
@@ -134,3 +163,37 @@ def _relative_path(manifest: Path, raw: object) -> Path:
         if candidate.is_absolute()
         else (manifest.parent / candidate).resolve()
     )
+
+
+def _validate_scenario_period(
+    scenario_id: str,
+    actual_start: date,
+    actual_end: date,
+    trading_days: int,
+) -> None:
+    requirement = SCENARIO_REQUIREMENTS[scenario_id]
+    issues = []
+    if (
+        requirement.latest_start is not None
+        and actual_start > requirement.latest_start
+    ):
+        issues.append(
+            f"starts {actual_start}, after required {requirement.latest_start}"
+        )
+    if (
+        requirement.earliest_end is not None
+        and actual_end < requirement.earliest_end
+    ):
+        issues.append(
+            f"ends {actual_end}, before required {requirement.earliest_end}"
+        )
+    if trading_days < requirement.minimum_trading_days:
+        issues.append(
+            f"has {trading_days} rows, requires "
+            f"{requirement.minimum_trading_days}"
+        )
+    if issues:
+        raise ValueError(
+            f"{scenario_id} historical coverage is insufficient: "
+            + "; ".join(issues)
+        )

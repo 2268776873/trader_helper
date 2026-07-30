@@ -15,7 +15,10 @@
 
 脚本先运行全部自动测试。测试失败时不会生成安装产物；测试通过后使用
 `TradeHelper.spec` 生成 `dist\TradeHelper.exe`，随后生成
-`TradeHelper-<version>-windows-x64.zip` 和对应 `.sha256`。
+`TradeHelper-<version>-windows-x64.zip` 和对应 `.sha256`。发布包同时包含无控制台窗口的
+`TradeHelper.exe` 客户端和用于回放、影子报告及发布验收的 `TradeHelperCLI.exe`。
+如果同一发布阶段刚刚单独完成过全量测试，可显式传入 `-SkipTests`，避免重复执行；
+不得用它跳过发布阶段的全量测试。
 
 发布 ZIP 自动包含使用手册、隐私与风险提示、行情补充示例和账户模板。验证脚本检查
 必需文件，并拒绝任何数据库、备份、`var` 内容或真实账户工作簿：

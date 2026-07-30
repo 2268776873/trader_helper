@@ -1,6 +1,7 @@
 param(
     [string]$Version = "0.1.0",
-    [string]$Executable = ".\dist\TradeHelper.exe"
+    [string]$Executable = ".\dist\TradeHelper.exe",
+    [string]$CliExecutable = ".\dist\TradeHelperCLI.exe"
 )
 
 $ErrorActionPreference = "Stop"
@@ -15,6 +16,15 @@ try {
     }
     if (-not (Test-Path -LiteralPath $executablePath -PathType Leaf)) {
         throw "Executable not found: $executablePath"
+    }
+    $cliExecutablePath = if ([System.IO.Path]::IsPathRooted($CliExecutable)) {
+        [System.IO.Path]::GetFullPath($CliExecutable)
+    }
+    else {
+        [System.IO.Path]::GetFullPath((Join-Path $projectRoot $CliExecutable))
+    }
+    if (-not (Test-Path -LiteralPath $cliExecutablePath -PathType Leaf)) {
+        throw "CLI executable not found: $cliExecutablePath"
     }
     $releaseName = "TradeHelper-$Version-windows-x64"
     $releaseRoot = Join-Path $projectRoot "dist\$releaseName"
@@ -31,11 +41,16 @@ try {
     New-Item -ItemType Directory -Path "$releaseRoot\config" | Out-Null
     New-Item -ItemType Directory -Path "$releaseRoot\templates" | Out-Null
     Copy-Item -LiteralPath $executablePath -Destination "$releaseRoot\TradeHelper.exe"
+    Copy-Item -LiteralPath $cliExecutablePath -Destination "$releaseRoot\TradeHelperCLI.exe"
     Copy-Item -LiteralPath ".\docs\user_manual.md" -Destination "$releaseRoot\docs"
     Copy-Item -LiteralPath ".\docs\privacy_and_risk.md" -Destination "$releaseRoot\docs"
     Copy-Item -LiteralPath ".\docs\client_backup_restore.md" -Destination "$releaseRoot\docs"
     Copy-Item -LiteralPath ".\docs\client_market_collection.md" -Destination "$releaseRoot\docs"
+    Copy-Item -LiteralPath ".\docs\strategy_replay.md" -Destination "$releaseRoot\docs"
     Copy-Item -LiteralPath ".\config\market_supplement.example.json" -Destination "$releaseRoot\config"
+    Copy-Item -LiteralPath ".\config\personal_v1.json" -Destination "$releaseRoot\config"
+    Copy-Item -LiteralPath ".\config\replay_initial_account.example.json" -Destination "$releaseRoot\config"
+    Copy-Item -LiteralPath ".\config\replay_suite.example.json" -Destination "$releaseRoot\config"
     Copy-Item -LiteralPath ".\outputs\account_template\trade_helper_account_template.xlsx" -Destination "$releaseRoot\templates"
 
     $manifest = [ordered]@{
@@ -44,6 +59,7 @@ try {
         platform = "windows-x64"
         created_at = [DateTimeOffset]::Now.ToString("o")
         executable_sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath "$releaseRoot\TradeHelper.exe").Hash.ToLowerInvariant()
+        cli_executable_sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath "$releaseRoot\TradeHelperCLI.exe").Hash.ToLowerInvariant()
         signed = $false
         notice = "Unsigned test build; local decision support only; no automatic ordering."
     }

@@ -14,10 +14,15 @@ try {
     $entries = @($zip.Entries | ForEach-Object { $_.FullName.Replace("\", "/") })
     $requiredSuffixes = @(
         "/TradeHelper.exe",
+        "/TradeHelperCLI.exe",
         "/release-manifest.json",
         "/docs/user_manual.md",
         "/docs/privacy_and_risk.md",
+        "/docs/strategy_replay.md",
         "/config/market_supplement.example.json",
+        "/config/personal_v1.json",
+        "/config/replay_initial_account.example.json",
+        "/config/replay_suite.example.json",
         "/templates/trade_helper_account_template.xlsx"
     )
     foreach ($suffix in $requiredSuffixes) {

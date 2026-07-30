@@ -9,6 +9,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
+from trade_helper.ledger import CURRENT_SCHEMA_VERSION
+
 
 class BackupError(RuntimeError):
     pass
@@ -20,6 +22,7 @@ class BackupManifest:
     created_at: str
     database_sha256: str
     database_size: int
+    schema_version: int | None = None
 
 
 def _sha256(path: Path) -> str:
@@ -30,7 +33,7 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _verify_database(path: Path) -> None:
+def _verify_database(path: Path) -> int:
     try:
         connection = sqlite3.connect(path)
         row = connection.execute("PRAGMA integrity_check").fetchone()
@@ -40,6 +43,12 @@ def _verify_database(path: Path) -> None:
                 "SELECT name FROM sqlite_master WHERE type = 'table'"
             )
         }
+        schema_row = connection.execute(
+            """
+            SELECT value FROM schema_metadata
+            WHERE key = 'schema_version'
+            """
+        ).fetchone()
     except sqlite3.Error as error:
         raise BackupError(f"database validation failed: {error}") from error
     finally:
@@ -50,6 +59,18 @@ def _verify_database(path: Path) -> None:
     required = {"schema_metadata", "account_snapshots", "trades", "cash_flows"}
     if not required.issubset(tables):
         raise BackupError("backup does not contain a Trade Helper database")
+    try:
+        schema_version = int(schema_row[0]) if schema_row is not None else 0
+    except (TypeError, ValueError) as error:
+        raise BackupError("backup schema version is invalid") from error
+    if schema_version <= 0:
+        raise BackupError("backup schema version is missing")
+    if schema_version > CURRENT_SCHEMA_VERSION:
+        raise BackupError(
+            f"backup schema V{schema_version} is newer than program "
+            f"schema V{CURRENT_SCHEMA_VERSION}"
+        )
+    return schema_version
 
 
 def create_backup(database: str | Path, destination: str | Path) -> BackupManifest:
@@ -67,12 +88,13 @@ def create_backup(database: str | Path, destination: str | Path) -> BackupManife
         finally:
             target_connection.close()
             source_connection.close()
-        _verify_database(snapshot)
+        schema_version = _verify_database(snapshot)
         manifest = BackupManifest(
             1,
             datetime.now().astimezone().isoformat(),
             _sha256(snapshot),
             snapshot.stat().st_size,
+            schema_version,
         )
         with zipfile.ZipFile(
             target, "w", compression=zipfile.ZIP_DEFLATED
@@ -114,7 +136,14 @@ def restore_backup(backup: str | Path, destination: str | Path) -> BackupManifes
             raise BackupError("backup database size does not match manifest")
         if _sha256(database) != manifest.database_sha256:
             raise BackupError("backup checksum verification failed")
-        _verify_database(database)
+        schema_version = _verify_database(database)
+        if (
+            manifest.schema_version is not None
+            and manifest.schema_version != schema_version
+        ):
+            raise BackupError(
+                "backup schema version does not match manifest"
+            )
         target.parent.mkdir(parents=True, exist_ok=True)
         temporary_target = target.with_suffix(target.suffix + ".restoring")
         temporary_target.write_bytes(database.read_bytes())
