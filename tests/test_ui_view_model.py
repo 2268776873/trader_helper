@@ -78,6 +78,7 @@ class DashboardRepositoryTests(TestCase):
             model = DashboardRepository(database).load()
             history = DashboardRepository(database).load_history()
             details = DashboardRepository(database).load_market_details()
+            versions, levels = DashboardRepository(database).load_config_versions()
 
         self.assertTrue(model.has_account)
         self.assertEqual(Decimal("500000"), model.total_assets_cny)
@@ -90,3 +91,6 @@ class DashboardRepositoryTests(TestCase):
         self.assertIn("16,000.00", history[0].summary)
         self.assertEqual(("q1", "q2"), details[0].quote_sources)
         self.assertEqual(("v1", "v2"), details[0].valuation_sources)
+        self.assertTrue(versions[0].is_runtime)
+        self.assertEqual("personal-v1", versions[0].config_version)
+        self.assertEqual(9, len(levels))

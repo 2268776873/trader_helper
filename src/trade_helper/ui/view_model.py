@@ -59,6 +59,24 @@ class MarketDetail:
 
 
 @dataclass(frozen=True)
+class ConfigVersionDetail:
+    config_version: str
+    status: str
+    effective_at: str
+    is_runtime: bool
+    parameters: tuple[tuple[str, str], ...]
+
+
+@dataclass(frozen=True)
+class TacticalStateDetail:
+    asset_id: str
+    level_id: str
+    status: str
+    filled_cny: Decimal
+    near_high_days: int
+
+
+@dataclass(frozen=True)
 class DashboardViewModel:
     has_account: bool
     total_assets_cny: Decimal
@@ -371,3 +389,79 @@ class DashboardRepository:
                 )
             )
         return tuple(details)
+
+    def load_config_versions(
+        self,
+    ) -> tuple[tuple[ConfigVersionDetail, ...], tuple[TacticalStateDetail, ...]]:
+        if not self.database.exists():
+            return (), ()
+        ledger = Ledger(self.database)
+        ledger.initialize()
+        with closing(ledger.connect()) as connection:
+            runtime = connection.execute(
+                "SELECT config_version FROM strategy_runtime WHERE runtime_id = 1"
+            ).fetchone()
+            rows = connection.execute(
+                """
+                SELECT config_version, status, effective_at, content_json
+                FROM config_versions ORDER BY effective_at DESC, config_version DESC
+                """
+            ).fetchall()
+            levels = connection.execute(
+                """
+                SELECT asset_id, level_id, status, filled_fen, near_high_days
+                FROM tactical_level_state ORDER BY sort_order
+                """
+            ).fetchall()
+        runtime_version = runtime["config_version"] if runtime else None
+        versions = []
+        for row in rows:
+            raw = json.loads(row["content_json"])
+            assets = {
+                item["asset_id"]: item for item in raw.get("assets", [])
+            }
+            parameters = (
+                (
+                    "目标权重",
+                    " / ".join(
+                        f"{asset_id} {assets.get(asset_id, {}).get('target_weight', '-')}"
+                        for asset_id in ("SP500", "NASDAQ", "DIVIDEND")
+                    ),
+                ),
+                (
+                    "现金底线",
+                    str(raw.get("cash", {}).get("strategic_floor_cny", "-")),
+                ),
+                (
+                    "单日买入上限",
+                    str(raw.get("execution", {}).get("daily_buy_limit_ratio", "-")),
+                ),
+                (
+                    "整手份额",
+                    str(raw.get("execution", {}).get("board_lot", "-")),
+                ),
+                (
+                    "价格止损",
+                    str(raw.get("sell_policy", {}).get("price_stop_loss", "-")),
+                ),
+                (
+                    "自动下单",
+                    str(raw.get("execution", {}).get("automatic_ordering", "-")),
+                ),
+            )
+            versions.append(
+                ConfigVersionDetail(
+                    row["config_version"], row["status"], row["effective_at"],
+                    row["config_version"] == runtime_version, parameters,
+                )
+            )
+        return (
+            tuple(versions),
+            tuple(
+                TacticalStateDetail(
+                    row["asset_id"], row["level_id"], row["status"],
+                    Decimal(row["filled_fen"]) / 100, row["near_high_days"],
+                )
+                for row in levels
+            ),
+        )

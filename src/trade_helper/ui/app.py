@@ -121,6 +121,10 @@ class TradeHelperApp(tk.Tk):
                 for widget in (item, *item.winfo_children()):
                     widget.configure(cursor="hand2")
                     widget.bind("<Button-1>", lambda _: self._open_data_center())
+            if label == "策略状态":
+                for widget in (item, *item.winfo_children()):
+                    widget.configure(cursor="hand2")
+                    widget.bind("<Button-1>", lambda _: self._open_strategy_state())
         footer = tk.Frame(sidebar, bg=COLORS["sidebar"])
         footer.pack(side="bottom", fill="x", padx=22, pady=24)
         tk.Label(
@@ -635,6 +639,79 @@ class TradeHelperApp(tk.Tk):
                     "；".join(detail.reasons) or "无",
                 ),
             )
+
+    def _open_strategy_state(self) -> None:
+        versions, levels = DashboardRepository(
+            self.database
+        ).load_config_versions()
+        window = tk.Toplevel(self)
+        window.title("Trade Helper · 策略状态")
+        window.geometry("1040x720")
+        window.configure(bg=COLORS["window"])
+        tk.Label(
+            window, text="策略版本与状态机", font=FONTS["hero"],
+            fg=COLORS["text"], bg=COLORS["window"],
+        ).pack(anchor="w", padx=28, pady=(24, 4))
+        tk.Label(
+            window,
+            text="只读审计视图 · 配置版本不可原地覆盖",
+            font=FONTS["small"], fg=COLORS["muted"], bg=COLORS["window"],
+        ).pack(anchor="w", padx=28, pady=(0, 18))
+        content = tk.Frame(window, bg=COLORS["window"])
+        content.pack(fill="both", expand=True, padx=28, pady=(0, 28))
+        content.grid_columnconfigure(0, weight=1)
+        content.grid_columnconfigure(1, weight=1)
+        version_card = self._card(content)
+        version_card.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
+        tk.Label(
+            version_card, text="配置版本", font=FONTS["title"],
+            fg=COLORS["text"], bg=COLORS["surface"],
+        ).pack(anchor="w", padx=18, pady=(16, 10))
+        for version in versions:
+            box = tk.Frame(
+                version_card, bg=COLORS["cyan_dim"] if version.is_runtime else COLORS["surface_hover"]
+            )
+            box.pack(fill="x", padx=18, pady=5)
+            tk.Label(
+                box,
+                text=f"{version.config_version}  {'● 运行中' if version.is_runtime else ''}",
+                font=FONTS["title"],
+                fg=COLORS["cyan"] if version.is_runtime else COLORS["text"],
+                bg=box["bg"],
+            ).pack(anchor="w", padx=12, pady=(9, 2))
+            tk.Label(
+                box, text=f"{version.status} · {version.effective_at}",
+                font=FONTS["small"], fg=COLORS["muted"], bg=box["bg"],
+            ).pack(anchor="w", padx=12)
+            for key, value in version.parameters:
+                tk.Label(
+                    box, text=f"{key}：{value}", font=FONTS["small"],
+                    fg=COLORS["text"], bg=box["bg"],
+                ).pack(anchor="w", padx=12, pady=(2, 0))
+            tk.Frame(box, bg=box["bg"], height=8).pack()
+        state_card = self._card(content)
+        state_card.grid(row=0, column=1, sticky="nsew", padx=(8, 0))
+        tk.Label(
+            state_card, text="回撤档位", font=FONTS["title"],
+            fg=COLORS["text"], bg=COLORS["surface"],
+        ).pack(anchor="w", padx=18, pady=(16, 10))
+        for level in levels:
+            row = tk.Frame(state_card, bg=COLORS["surface"])
+            row.pack(fill="x", padx=18, pady=5)
+            tk.Label(
+                row, text=f"{level.asset_id} · {level.level_id}",
+                font=FONTS["mono"], fg=COLORS["text"], bg=COLORS["surface"],
+            ).pack(side="left")
+            color = (
+                COLORS["green"] if level.status == "FILLED"
+                else COLORS["yellow"] if level.status in {"TRIGGERED", "PARTIALLY_FILLED"}
+                else COLORS["muted"]
+            )
+            tk.Label(
+                row,
+                text=f"{level.status}  ¥{level.filled_cny:,.0f}",
+                font=FONTS["small"], fg=color, bg=COLORS["surface"],
+            ).pack(side="right")
 
 
 def main() -> int:
