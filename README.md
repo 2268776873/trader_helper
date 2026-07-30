@@ -92,6 +92,13 @@ python -m trade_helper.cli market-collect .\config\market_supplement.example.jso
 任一行情源失败、双估值缺失或冲突、公告阻断时仍会保存原始快照，但状态为
 `BLOCKED`，不会生成可执行建议。
 
+完整操作和发布资料：
+
+- [使用手册](docs/user_manual.md)
+- [隐私与风险提示](docs/privacy_and_risk.md)
+- [Windows 构建](docs/windows_build.md)
+- [发布检查清单](docs/release_checklist.md)
+
 也可以使用 Windows 脚本，并在未配置 PATH 时传入 Python 完整路径：
 
 ```powershell
