@@ -14,6 +14,7 @@ dependencies = ["openpyxl>=3.1,<4"]
 
 [project.scripts]
 trade-helper = "trade_helper.cli:main"
+trade-helper-gui = "trade_helper.ui.app:main"
 
 [tool.setuptools]
 package-dir = { "" = "src" }

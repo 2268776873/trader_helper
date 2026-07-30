@@ -32,6 +32,12 @@ python -m trade_helper.cli excel-import .\outputs\account_template\trade_helper_
 导入会返回 `"imported": false`，不会重复生成快照、成交或资金流水。模板自带示例行，
 正式使用时应删除或覆盖示例数据。
 
+启动 Windows 客户端界面：
+
+```powershell
+python -m trade_helper.ui.app
+```
+
 也可以使用 Windows 脚本，并在未配置 PATH 时传入 Python 完整路径：
 
 ```powershell
