@@ -22,7 +22,13 @@
 
 ```powershell
 .\scripts\verify_windows_release.ps1 -Archive .\dist\TradeHelper-0.1.0-windows-x64.zip
+.\scripts\smoke_test_windows_exe.ps1 -Executable .\dist\TradeHelper.exe -AllowVisibleLaunch
 ```
+
+GUI 烟雾脚本兼容 PyInstaller 单文件模式的父进程与 GUI 子进程，等待主窗口出现并确认
+窗口可响应，然后正常关闭测试进程。构建脚本若发现 PyInstaller 因 Tcl/Tk 不可用而排除
+`tkinter`，会直接失败，不会生成可发布结果。烟雾脚本默认拒绝运行，必须在提前告知用户
+后显式传入 `-AllowVisibleLaunch`，避免客户端窗口突然出现。
 
 安装器使用 Inno Setup 6 编译：
 
