@@ -5,8 +5,9 @@ import os
 from dataclasses import dataclass
 from decimal import Decimal
 from pathlib import Path
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, messagebox, simpledialog, ttk
 
+from trade_helper.execution import AdviceStatus
 from trade_helper.ui.theme import COLORS, FONTS, status_color
 from trade_helper.ui.controller import DesktopController
 from trade_helper.ui.view_model import (
@@ -278,18 +279,63 @@ class TradeHelperApp(tk.Tk):
             if self.model.latest_decision_status else "等待 14:00 数据确认后生成"
         )
         tk.Label(card, text=decision_copy, font=FONTS["small"], fg=COLORS["muted"], bg=COLORS["surface"]).pack(anchor="w", padx=20)
-        line = tk.Frame(card, bg=COLORS["cyan_dim"], highlightthickness=1, highlightbackground=COLORS["cyan"])
-        line.pack(fill="x", padx=20, pady=18)
-        tk.Label(line, text="◇", font=("Segoe UI Symbol", 22), fg=COLORS["cyan"], bg=COLORS["cyan_dim"]).pack(side="left", padx=16, pady=14)
-        copy = tk.Frame(line, bg=COLORS["cyan_dim"])
-        copy.pack(side="left", fill="x", expand=True)
-        tk.Label(copy, text="当前无可执行建议", font=FONTS["title"], fg=COLORS["text"], bg=COLORS["cyan_dim"]).pack(anchor="w")
-        tk.Label(copy, text="系统将在数据、对账与风控全部通过后显示建议", font=FONTS["small"], fg=COLORS["muted"], bg=COLORS["cyan_dim"]).pack(anchor="w")
-        tk.Button(
-            line, text="运行检查", font=FONTS["body"], fg=COLORS["window"],
-            bg=COLORS["cyan"], activebackground=COLORS["green"], relief="flat",
-            padx=18, pady=8, cursor="hand2",
-        ).pack(side="right", padx=16)
+        if not self.model.open_advices:
+            line = tk.Frame(card, bg=COLORS["cyan_dim"], highlightthickness=1, highlightbackground=COLORS["cyan"])
+            line.pack(fill="x", padx=20, pady=18)
+            tk.Label(line, text="◇", font=("Segoe UI Symbol", 22), fg=COLORS["cyan"], bg=COLORS["cyan_dim"]).pack(side="left", padx=16, pady=14)
+            copy = tk.Frame(line, bg=COLORS["cyan_dim"])
+            copy.pack(side="left", fill="x", expand=True)
+            tk.Label(copy, text="当前无待处理建议", font=FONTS["title"], fg=COLORS["text"], bg=COLORS["cyan_dim"]).pack(anchor="w")
+            tk.Label(copy, text="系统将在数据、对账与风控全部通过后显示建议", font=FONTS["small"], fg=COLORS["muted"], bg=COLORS["cyan_dim"]).pack(anchor="w")
+            return
+        for advice in self.model.open_advices[:4]:
+            row = tk.Frame(
+                card, bg=COLORS["cyan_dim"], highlightthickness=1,
+                highlightbackground=COLORS["border"],
+            )
+            row.pack(fill="x", padx=20, pady=(10, 0))
+            copy = tk.Frame(row, bg=COLORS["cyan_dim"])
+            copy.pack(side="left", fill="x", expand=True, padx=14, pady=10)
+            side_text = "买入" if advice.side == "BUY" else "卖出"
+            tk.Label(
+                copy,
+                text=f"{side_text} {advice.code} · {advice.proposed_quantity:,} 份",
+                font=FONTS["title"], fg=COLORS["text"], bg=COLORS["cyan_dim"],
+            ).pack(anchor="w")
+            tk.Label(
+                copy,
+                text=(
+                    f"限价 {advice.limit_price:.3f} · 已成交 "
+                    f"{advice.filled_quantity:,} · {advice.status}"
+                ),
+                font=FONTS["small"], fg=COLORS["muted"], bg=COLORS["cyan_dim"],
+            ).pack(anchor="w")
+            actions = tk.Frame(row, bg=COLORS["cyan_dim"])
+            actions.pack(side="right", padx=10)
+            self._action_button(
+                actions, "未操作",
+                lambda item=advice: self._record_attempt(
+                    item.advice_id, AdviceStatus.NOT_ATTEMPTED
+                ),
+                COLORS["muted"],
+            ).pack(side="left", padx=3)
+            self._action_button(
+                actions, "已下单",
+                lambda item=advice: self._record_attempt(
+                    item.advice_id, AdviceStatus.ORDER_SUBMITTED
+                ),
+                COLORS["blue"],
+            ).pack(side="left", padx=3)
+            self._action_button(
+                actions, "回填成交",
+                lambda item=advice: self._record_fill(
+                    item.advice_id,
+                    item.proposed_quantity - item.filled_quantity,
+                    item.limit_price,
+                ),
+                COLORS["green"],
+            ).pack(side="left", padx=3)
+        tk.Frame(card, bg=COLORS["surface"], height=14).pack()
 
     def _cash_panel(self, parent: tk.Widget) -> None:
         card = self._card(parent)
@@ -361,6 +407,52 @@ class TradeHelperApp(tk.Tk):
         for child in self.winfo_children():
             child.destroy()
         self._build_shell()
+
+    def _action_button(
+        self, parent: tk.Widget, text: str, command, color: str
+    ) -> tk.Button:
+        return tk.Button(
+            parent, text=text, command=command, font=FONTS["small"],
+            fg=COLORS["text"], bg=COLORS["surface_hover"],
+            activebackground=color, activeforeground=COLORS["window"],
+            relief="flat", padx=9, pady=6, cursor="hand2",
+        )
+
+    def _record_attempt(self, advice_id: str, status: AdviceStatus) -> None:
+        try:
+            self.controller.record_attempt(advice_id, status)
+        except Exception as error:
+            messagebox.showerror("反馈失败", str(error), parent=self)
+            return
+        self._reload_dashboard()
+
+    def _record_fill(
+        self, advice_id: str, remaining_quantity: int, suggested_price: Decimal
+    ) -> None:
+        quantity = simpledialog.askinteger(
+            "实际成交数量",
+            f"请输入实际成交份额（剩余 {remaining_quantity:,}）",
+            parent=self, minvalue=1, maxvalue=remaining_quantity,
+        )
+        if quantity is None:
+            return
+        price = simpledialog.askfloat(
+            "实际成交价格",
+            "请输入券商显示的实际成交价",
+            parent=self, minvalue=0.001,
+            initialvalue=float(suggested_price),
+        )
+        if price is None:
+            return
+        try:
+            status = self.controller.record_fill(
+                advice_id, quantity, Decimal(str(price))
+            )
+        except Exception as error:
+            messagebox.showerror("成交回填失败", str(error), parent=self)
+            return
+        messagebox.showinfo("成交已记录", f"当前状态：{status.value}", parent=self)
+        self._reload_dashboard()
 
 
 def main() -> int:

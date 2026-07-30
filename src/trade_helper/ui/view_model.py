@@ -25,6 +25,20 @@ class AssetDashboard:
 
 
 @dataclass(frozen=True)
+class AdviceDashboard:
+    advice_id: str
+    created_at: datetime
+    asset_id: str
+    code: str
+    side: str
+    proposed_quantity: int
+    filled_quantity: int
+    limit_price: Decimal
+    status: str
+    reason: str
+
+
+@dataclass(frozen=True)
 class DashboardViewModel:
     has_account: bool
     total_assets_cny: Decimal
@@ -37,6 +51,7 @@ class DashboardViewModel:
     latest_decision_status: str | None
     assets: tuple[AssetDashboard, ...]
     cash_pools: tuple[tuple[str, Decimal], ...]
+    open_advices: tuple[AdviceDashboard, ...]
 
 
 def empty_dashboard() -> DashboardViewModel:
@@ -49,7 +64,7 @@ def empty_dashboard() -> DashboardViewModel:
             ("纳指回撤", Decimal("0")),
             ("红利回撤", Decimal("0")),
             ("战略现金", Decimal("0")),
-        ),
+        ), (),
     )
 
 
@@ -108,6 +123,19 @@ class DashboardRepository:
                 """
                 SELECT asset_id, status FROM tactical_level_state
                 ORDER BY sort_order
+                """
+            ).fetchall()
+            advice_rows = connection.execute(
+                """
+                SELECT a.*, COALESCE(SUM(f.quantity), 0) AS filled_quantity
+                FROM advice a
+                LEFT JOIN advice_fills f ON f.advice_id = a.advice_id
+                WHERE a.status IN (
+                    'PENDING_CONFIRMATION', 'NOT_ATTEMPTED', 'ORDER_SUBMITTED',
+                    'PARTIALLY_FILLED'
+                )
+                GROUP BY a.advice_id
+                ORDER BY a.created_at DESC, a.advice_id DESC
                 """
             ).fetchall()
 
@@ -185,4 +213,19 @@ class DashboardRepository:
             datetime.fromisoformat(decision["generated_at"]) if decision else None,
             str(decision["status"]) if decision else None,
             tuple(assets), pools,
+            tuple(
+                AdviceDashboard(
+                    row["advice_id"],
+                    datetime.fromisoformat(row["created_at"]),
+                    row["asset_id"],
+                    row["etf_code"],
+                    row["side"],
+                    int(row["proposed_quantity"]),
+                    int(row["filled_quantity"]),
+                    Decimal(row["limit_price_milli"]) / 1000,
+                    row["status"],
+                    row["reason"],
+                )
+                for row in advice_rows
+            ),
         )
