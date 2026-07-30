@@ -24,13 +24,23 @@
 .\scripts\verify_windows_release.ps1 -Archive .\dist\TradeHelper-0.1.0-windows-x64.zip
 ```
 
-当前产物是免安装单文件客户端。首次正式发布前还需要完成：
+安装器使用 Inno Setup 6 编译：
+
+```powershell
+.\scripts\build_windows_installer.ps1 -Version 0.1.0
+```
+
+安装器采用每用户目录 `%LOCALAPPDATA%\Programs\TradeHelper`，默认不要求管理员权限。
+卸载只移除程序文件和快捷方式，故意保留 `%LOCALAPPDATA%\TradeHelper` 中的个人数据库
+及安全备份。安装器同样生成独立 `.sha256` 文件。
+
+发布流程同时支持免安装 ZIP 和每用户安装器。首次正式发布前还需要完成：
 
 - Windows 10/11 干净虚拟机启动测试；
 - Excel 导入、成交回填和备份恢复冒烟测试；
 - 文件版本信息和应用图标；
 - 代码签名或明确显示“未签名测试版”；
-- 安装器与卸载流程。
+- 在干净虚拟机验证安装、升级、卸载及用户数据保留。
 
 不得把测试数据库、真实账户工作簿或 `var` 目录打入发布包。
 
