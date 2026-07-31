@@ -16,6 +16,15 @@ class ProxyReplayConversion:
     rows: int
     proxy_kind: str = "PROXY"
 
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "input_path": self.input_path,
+            "output_path": self.output_path,
+            "audit_path": self.audit_path,
+            "rows": self.rows,
+            "proxy_kind": self.proxy_kind,
+        }
+
 
 REQUIRED_COLUMNS = (
     "trading_date",

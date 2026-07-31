@@ -32,6 +32,7 @@ from trade_helper.replay_suite import (
 )
 from trade_helper.release_readiness import build_release_readiness
 from trade_helper.proxy_replay import convert_proxy_csv
+from trade_helper.proxy_sources import build_proxy_source_csv
 from trade_helper.doctor import run_doctor
 from trade_helper.config import load_strategy_config
 from trade_helper.decision_service import DailyDecisionService, DecisionInputError
@@ -130,6 +131,14 @@ def build_parser() -> argparse.ArgumentParser:
     proxy.add_argument("output", type=Path)
     proxy.add_argument("--audit", type=Path)
     proxy.add_argument("--source-notes", required=True)
+    proxy_sources = subparsers.add_parser(
+        "download-proxy-sources",
+        help="download auditable Yahoo/FRED proxy source series",
+    )
+    proxy_sources.add_argument("--start", required=True)
+    proxy_sources.add_argument("--end", required=True)
+    proxy_sources.add_argument("--output", type=Path, required=True)
+    proxy_sources.add_argument("--source-dir", type=Path, required=True)
     replay_suite = subparsers.add_parser(
         "replay-suite",
         help="run all mandatory audited historical stress scenarios",
@@ -242,7 +251,16 @@ def main(argv: Sequence[str] | None = None) -> int:
             audit_path=args.audit,
             source_notes=args.source_notes,
         )
-        print(json.dumps(result.__dict__, ensure_ascii=False, indent=2))
+        print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
+        return 0
+    if args.command == "download-proxy-sources":
+        result = build_proxy_source_csv(
+            args.output,
+            start_date=datetime.fromisoformat(args.start).date(),
+            end_date=datetime.fromisoformat(args.end).date(),
+            source_dir=args.source_dir,
+        )
+        print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
         return 0
     if args.command == "replay-suite":
         result = run_replay_suite(

@@ -6,6 +6,8 @@ node_modules/
 build/
 dist/
 var/
+data/replay/
+data/sources/
 *.egg-info/
 outputs/**/previews/
 *.inspect.ndjson

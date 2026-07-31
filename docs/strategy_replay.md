@@ -25,6 +25,20 @@ python -m trade_helper.cli strategy-replay .\data\history.csv `
 卖出净额按已确认的方案 A 全部进入战略现金。报告会明确记录这些假设，因此不能把
 结果解释为真实券商逐笔成交复现。
 
+代理源下载示例（原始响应会保存并记录 SHA-256）：
+
+```powershell
+.\TradeHelperCLI.exe download-proxy-sources `
+  --start 2000-01-01 --end 2002-11-01 `
+  --output .\data\replay\dot-com-raw.csv `
+  --source-dir .\data\sources\dot-com
+.\TradeHelperCLI.exe proxy-replay-input .\data\replay\dot-com-raw.csv `
+  .\data\replay\dot-com.csv `
+  --source-notes "Yahoo ^GSPC/^NDX and FRED DEXCHUS; 000001.SS is the explicit broad-China dividend proxy; cross-market holidays use prior available observations"
+```
+
+下载器按估值日并集对齐各市场，并且只向前取最近已知值，绝不使用未来值；这一对齐模式和原始源文件哈希会写入 `*.sources.json`。
+
 2000 年互联网泡沫、2008 年金融危机、2022 年下跌和长期上涨区间必须使用可审计的
 真实历史输入分别运行。仓库中的示例初始账户不是历史行情，也不能替代这些验收数据。
 
