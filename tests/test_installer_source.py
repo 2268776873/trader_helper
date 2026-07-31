@@ -16,6 +16,7 @@ class InstallerSourceTests(TestCase):
             source,
         )
         self.assertIn("PrivilegesRequired=lowest", source)
+        self.assertIn('MessagesFile: "compiler:Default.isl"', source)
         self.assertIn("skipifsilent", source)
         self.assertIn("InfoBeforeFile=..\\RELEASE_NOTES.md", source)
         run_line = next(

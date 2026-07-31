@@ -31,6 +31,7 @@ from trade_helper.replay_suite import (
     write_replay_suite,
 )
 from trade_helper.release_readiness import build_release_readiness
+from trade_helper.proxy_replay import convert_proxy_csv
 from trade_helper.doctor import run_doctor
 from trade_helper.config import load_strategy_config
 from trade_helper.decision_service import DailyDecisionService, DecisionInputError
@@ -121,6 +122,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     strategy_replay.add_argument("--output", type=Path, required=True)
     strategy_replay.add_argument("--trajectory", type=Path)
+    proxy = subparsers.add_parser(
+        "proxy-replay-input",
+        help="convert audited index/FX inputs into explicit PROXY replay rows",
+    )
+    proxy.add_argument("input", type=Path)
+    proxy.add_argument("output", type=Path)
+    proxy.add_argument("--audit", type=Path)
+    proxy.add_argument("--source-notes", required=True)
     replay_suite = subparsers.add_parser(
         "replay-suite",
         help="run all mandatory audited historical stress scenarios",
@@ -225,6 +234,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         write_strategy_replay(result, args.output, args.trajectory)
         print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
+        return 0
+    if args.command == "proxy-replay-input":
+        result = convert_proxy_csv(
+            args.input,
+            args.output,
+            audit_path=args.audit,
+            source_notes=args.source_notes,
+        )
+        print(json.dumps(result.__dict__, ensure_ascii=False, indent=2))
         return 0
     if args.command == "replay-suite":
         result = run_replay_suite(
