@@ -237,3 +237,43 @@ class DesktopControllerTests(TestCase):
         self.assertEqual(1, calendar.open_days)
         self.assertTrue(repeated.skipped)
         self.assertEqual("READY", repeated.status)
+
+    def test_save_today_supplement_round_trip(self) -> None:
+        from trade_helper.market_collection import load_manual_supplement
+
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            controller = DesktopController(root / "account.db")
+            observed_at = datetime(
+                2026, 7, 30, 14, 0, tzinfo=timezone(timedelta(hours=8))
+            )
+            assets = {
+                "SP500": {
+                    "quote": {
+                        "source": "BROKER_MANUAL",
+                        "last": "2.000", "bid": "1.999", "ask": "2.000",
+                    },
+                    "valuations": [
+                        {"source": "VALUATION_SOURCE_A", "value": "2.000"},
+                        {"source": "VALUATION_SOURCE_B", "value": "2.001"},
+                    ],
+                    "index": {"source": "INDEX_SOURCE", "value": "6500"},
+                    "fx": {"source": "FX_SOURCE", "value": "7.1500"},
+                    "reference_value_cny": "100.0",
+                },
+                "NASDAQ": {},
+                "DIVIDEND": {},
+            }
+            target = root / "today-market.json"
+            written = controller.save_today_supplement(
+                target, observed_at, assets
+            )
+            self.assertEqual(written, target)
+            parsed_at, parsed_assets = load_manual_supplement(target)
+            self.assertEqual(parsed_at, observed_at)
+            self.assertEqual(
+                parsed_assets["SP500"]["quote"]["ask"], "2.000"
+            )
+            self.assertEqual(
+                parsed_assets["SP500"]["valuations"][1]["value"], "2.001"
+            )

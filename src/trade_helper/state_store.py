@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
 
-from trade_helper.cash_management import CashPools
+from trade_helper.cash_management import CashPools, apply_actual_cash_flow
 from trade_helper.config import StrategyConfig
 from trade_helper.ledger import Ledger, LedgerConflict, cny_to_fen
 from trade_helper.strategy import BaseBudgetState
@@ -73,7 +73,12 @@ class StrategyStateStore:
             )
         return True
 
-    def initialize_runtime(self, config: StrategyConfig) -> RuntimeState:
+    def initialize_runtime(
+        self,
+        config: StrategyConfig,
+        *,
+        cash_total_cny: Decimal | None = None,
+    ) -> RuntimeState:
         self.save_config(config)
         pools_raw = config.raw["cash_pools"]
         tactical = pools_raw["tactical_pool_cny"]
@@ -84,6 +89,24 @@ class StrategyStateStore:
             Decimal(str(tactical["DIVIDEND"])),
             Decimal(str(pools_raw["strategic_cash_cny"])),
         )
+        if cash_total_cny is None:
+            with closing(self.ledger.connect()) as connection:
+                account = connection.execute(
+                    """
+                    SELECT available_cash_fen, frozen_cash_fen
+                    FROM account_snapshots
+                    ORDER BY as_of DESC, snapshot_id DESC LIMIT 1
+                    """
+                ).fetchone()
+            if account is not None:
+                cash_total_cny = (
+                    Decimal(account["available_cash_fen"])
+                    + Decimal(account["frozen_cash_fen"])
+                ) / Decimal(100)
+        if cash_total_cny is not None:
+            delta = cash_total_cny - pools.total_cny
+            if delta:
+                pools = apply_actual_cash_flow(config, pools, delta)
         levels = tuple(
             TacticalLevelState(asset.asset_id, str(level["level_id"]), "ARMED")
             for asset in config.assets

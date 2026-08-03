@@ -6,8 +6,13 @@ node_modules/
 build/
 dist/
 var/
+*.db
+*.db-*
+*.thbackup
+today-market.json
 data/replay/
 data/sources/
+outputs/account_import/
 *.egg-info/
 outputs/**/previews/
 *.inspect.ndjson

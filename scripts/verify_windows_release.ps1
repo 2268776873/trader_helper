@@ -28,7 +28,8 @@ try {
         "/scripts/register_daily_task.ps1",
         "/scripts/run_daily_pipeline.ps1",
         "/scripts/run_daily_decision.ps1",
-        "/scripts/unregister_daily_task.ps1"
+        "/scripts/unregister_daily_task.ps1",
+        "/data/calendar_2026.csv"
     )
     foreach ($suffix in $requiredSuffixes) {
         if (-not ($entries | Where-Object { $_.EndsWith($suffix) })) {

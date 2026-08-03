@@ -4,7 +4,7 @@ import argparse
 import json
 from uuid import uuid4
 from dataclasses import asdict
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 from typing import Sequence
 
@@ -192,6 +192,12 @@ def build_parser() -> argparse.ArgumentParser:
     calendar.add_argument("input", type=Path)
     calendar.add_argument("--database", type=Path, required=True)
     calendar.add_argument("--source", default="MANUAL_CSV")
+    calendar.add_argument(
+        "--if-missing-date",
+        type=date.fromisoformat,
+        default=None,
+        help="import only when this date is absent from the database calendar",
+    )
     daily = subparsers.add_parser(
         "daily-decision", help="run and audit the daily decision from persisted data"
     )
@@ -201,9 +207,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     collect = subparsers.add_parser(
         "market-collect",
-        help="collect public quotes plus audited manual valuation supplements",
+        help="collect automatic public ETF quotes and reference values",
     )
-    collect.add_argument("supplement", type=Path)
+    collect.add_argument(
+        "supplement", type=Path, nargs="?",
+        help="optional audited fallback JSON; normal operation is automatic",
+    )
     collect.add_argument("--database", type=Path, required=True)
     collect.add_argument(
         "--config", type=Path, default=Path("config/personal_v1.json")
@@ -326,8 +335,26 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "calendar-import":
         ledger = Ledger(args.database)
         ledger.initialize()
+        store = TradingCalendarStore(ledger)
+        if args.if_missing_date is not None:
+            try:
+                store.trading_day_number(args.if_missing_date)
+            except ValueError:
+                pass
+            else:
+                print(
+                    json.dumps(
+                        {
+                            "ok": True,
+                            "skipped": True,
+                            "reason": "交易日历已包含该日期",
+                        },
+                        ensure_ascii=False,
+                    )
+                )
+                return 0
         days = load_calendar_csv(args.input, args.source)
-        TradingCalendarStore(ledger).replace(days)
+        store.replace(days)
         print(json.dumps({"ok": True, "rows": len(days)}, ensure_ascii=False))
         return 0
     if args.command == "daily-decision":
@@ -386,7 +413,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         return 0
     if args.command == "market-collect":
-        observed_at, supplements = load_manual_supplement(args.supplement)
+        if args.supplement is None:
+            observed_at = datetime.now().astimezone()
+            supplements = {}
+        else:
+            observed_at, supplements = load_manual_supplement(args.supplement)
         ledger = Ledger(args.database)
         ledger.initialize()
         result = MarketCollectionService(

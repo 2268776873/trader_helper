@@ -22,21 +22,33 @@ try {
         Join-Path $env:LOCALAPPDATA "TradeHelper\account.db"
     }
     $configPath = Resolve-ProjectPath $Config
-    $supplementPath = if ($Supplement) {
-        Resolve-ProjectPath $Supplement
-    } else {
-        Join-Path $env:LOCALAPPDATA "TradeHelper\today-market.json"
-    }
+    $supplementPath = if ($Supplement) { Resolve-ProjectPath $Supplement } else { $null }
     if (-not (Test-Path -LiteralPath $cliPath -PathType Leaf)) {
         throw "Trade Helper CLI not found: $cliPath"
     }
-    if (-not (Test-Path -LiteralPath $supplementPath -PathType Leaf)) {
-        throw "Market supplement file not found: $supplementPath"
+    $calendarCsv = Join-Path $projectRoot "data\calendar_2026.csv"
+    if (Test-Path -LiteralPath $calendarCsv -PathType Leaf) {
+        & $cliPath calendar-import $calendarCsv `
+            --database $databasePath `
+            --source SSE-2026 `
+            --if-missing-date (Get-Date -Format "yyyy-MM-dd")
+        if ($LASTEXITCODE -ne 0) {
+            Write-Warning "calendar auto-seed failed; continuing with existing calendar data"
+        }
     }
-
-    & $cliPath market-collect $supplementPath `
-        --database $databasePath `
-        --config $configPath
+    if ($supplementPath) {
+        if (-not (Test-Path -LiteralPath $supplementPath -PathType Leaf)) {
+            throw "Explicit market fallback file not found: $supplementPath"
+        }
+        & $cliPath market-collect $supplementPath `
+            --database $databasePath `
+            --config $configPath
+    }
+    else {
+        & $cliPath market-collect `
+            --database $databasePath `
+            --config $configPath
+    }
     if ($LASTEXITCODE -ne 0) {
         exit $LASTEXITCODE
     }

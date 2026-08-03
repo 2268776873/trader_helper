@@ -41,6 +41,7 @@ try {
     New-Item -ItemType Directory -Path "$releaseRoot\config" | Out-Null
     New-Item -ItemType Directory -Path "$releaseRoot\templates" | Out-Null
     New-Item -ItemType Directory -Path "$releaseRoot\scripts" | Out-Null
+    New-Item -ItemType Directory -Path "$releaseRoot\data" | Out-Null
     Copy-Item -LiteralPath $executablePath -Destination "$releaseRoot\TradeHelper.exe"
     Copy-Item -LiteralPath $cliExecutablePath -Destination "$releaseRoot\TradeHelperCLI.exe"
     Copy-Item -LiteralPath ".\docs\user_manual.md" -Destination "$releaseRoot\docs"
@@ -58,6 +59,8 @@ try {
     Copy-Item -LiteralPath ".\scripts\run_daily_pipeline.ps1" -Destination "$releaseRoot\scripts"
     Copy-Item -LiteralPath ".\scripts\run_daily_decision.ps1" -Destination "$releaseRoot\scripts"
     Copy-Item -LiteralPath ".\scripts\unregister_daily_task.ps1" -Destination "$releaseRoot\scripts"
+    Copy-Item -LiteralPath ".\data\calendar_2026.csv" -Destination "$releaseRoot\data"
+    Copy-Item -LiteralPath ".\data\calendar_2026.source.md" -Destination "$releaseRoot\data"
 
     $manifest = [ordered]@{
         product = "Trade Helper"

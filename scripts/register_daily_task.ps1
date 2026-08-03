@@ -21,11 +21,7 @@ $databasePath = if ($Database) {
     Join-Path $env:LOCALAPPDATA "TradeHelper\account.db"
 }
 $configPath = Resolve-ProjectPath $Config
-$supplementPath = if ($Supplement) {
-    Resolve-ProjectPath $Supplement
-} else {
-    Join-Path $env:LOCALAPPDATA "TradeHelper\today-market.json"
-}
+$supplementPath = if ($Supplement) { Resolve-ProjectPath $Supplement } else { $null }
 $cliPath = Resolve-ProjectPath $CliExecutable
 if (-not (Test-Path -LiteralPath $cliPath -PathType Leaf)) {
     throw "Trade Helper CLI not found: $cliPath"
@@ -37,9 +33,11 @@ $arguments = @(
     "-File", "`"$runner`"",
     "-CliExecutable", "`"$cliPath`"",
     "-Database", "`"$databasePath`"",
-    "-Config", "`"$configPath`"",
-    "-Supplement", "`"$supplementPath`""
+    "-Config", "`"$configPath`""
 ) -join " "
+if ($supplementPath) {
+    $arguments += " -Supplement `"$supplementPath`""
+}
 
 $action = New-ScheduledTaskAction `
     -Execute "powershell.exe" `
@@ -69,4 +67,7 @@ Register-ScheduledTask `
 
 Write-Host "Registered task: $TaskName"
 Write-Host "The task triggers on weekdays at 14:40; explicit A-share calendar data still gates decisions."
-Write-Host "Update the supplement file before the task starts: $supplementPath"
+Write-Host "Market quotes and ETF reference values are collected automatically."
+if ($supplementPath) {
+    Write-Host "Explicit fallback file: $supplementPath"
+}

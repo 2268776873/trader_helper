@@ -97,19 +97,12 @@ def aggregate_market_data(
             reasons.append("估值源溢价差超过阈值")
     if any(item.blocking for item in relevant):
         reasons.append("存在尚未解除的阻断公告或交易状态")
-    required_kinds = {ObservationKind.INDEX, ObservationKind.FX}
-    present_kinds = {item.kind for item in relevant if item.value is not None}
-    for kind in sorted(required_kinds - present_kinds):
-        reasons.append(f"缺少新鲜{kind.value}数据")
-
     blocking = {
         "缺少两个独立且新鲜的行情源",
         "行情源价格偏差超过阈值",
         "缺少两个独立且新鲜的估值源",
         "估值源溢价差超过阈值",
         "存在尚未解除的阻断公告或交易状态",
-        "缺少新鲜FX数据",
-        "缺少新鲜INDEX数据",
     }
     readiness = (
         Readiness.BLOCKED

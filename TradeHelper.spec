@@ -1,6 +1,19 @@
 # -*- mode: python ; coding: utf-8 -*-
 from pathlib import Path
 
+# Refuse to silently produce a GUI executable without Tcl/Tk. PyInstaller's
+# tkinter hook skips the whole module when its isolated probe fails (e.g. under
+# filesystem virtualization), yielding an exe that crashes on startup with
+# "No module named 'tkinter'". Fail loudly instead.
+from PyInstaller.utils.hooks.tcl_tk import tcltk_info
+
+if not tcltk_info.available:
+    raise SystemExit(
+        "FATAL: PyInstaller cannot use Tcl/Tk in this build environment.\n"
+        "Rebuild from a normal (non-sandboxed) shell so tkinter.Tcl() can "
+        "locate init.tcl, or fix the Python/Tcl installation."
+    )
+
 root = Path(SPECPATH)
 
 a = Analysis(

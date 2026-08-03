@@ -5,6 +5,23 @@ from trade_helper.providers.eastmoney import EastmoneyEtfProvider
 
 
 class EastmoneyEtfProviderTests(TestCase):
+    def test_parse_many_extracts_iopv_and_market_time(self) -> None:
+        quote = EastmoneyEtfProvider.parse_many_row(
+            {
+                "f2": 2533,
+                "f12": "513500",
+                "f14": "标普500ETF博时",
+                "f31": 2533,
+                "f32": 2534,
+                "f124": 1785741731,
+                "f145": 2403,
+            }
+        )
+        self.assertEqual("513500", quote.symbol)
+        self.assertEqual(2.533, quote.last_price)
+        self.assertEqual(2.403, quote.iopv)
+        self.assertIsNotNone(quote.observed_at.tzinfo)
+
     def test_parse_keeps_missing_iopv_explicit(self) -> None:
         observed_at = datetime(2026, 7, 30, 14, 0, tzinfo=timezone.utc)
 

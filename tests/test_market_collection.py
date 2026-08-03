@@ -19,22 +19,60 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class FakeSource:
-    def __init__(self, name: str, price: float, fail: bool = False) -> None:
+    def __init__(
+        self, name: str, price: float, fail: bool = False,
+        iopv: float | None = None,
+    ) -> None:
         self.name = name
         self.price = price
         self.fail = fail
+        self.iopv = iopv
 
     def fetch(self, symbols: tuple[str, ...]) -> tuple[Quote, ...]:
         if self.fail:
             raise RuntimeError("offline")
         now = datetime(2026, 7, 30, 14, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
         return tuple(
-            Quote(symbol, symbol, now, self.price, self.price, self.price, None, self.name)
+            Quote(
+                symbol, symbol, now, self.price, self.price, self.price,
+                self.iopv, self.name,
+            )
             for symbol in symbols
         )
 
 
 class MarketCollectionTests(TestCase):
+    def test_automatic_sources_need_no_manual_market_input(self) -> None:
+        with TemporaryDirectory() as directory:
+            ledger = Ledger(Path(directory) / "account.db")
+            ledger.initialize()
+            service = MarketCollectionService(
+                ledger,
+                load_strategy_config(ROOT / "config" / "personal_v1.json"),
+                (
+                    FakeSource("q1", 2.10, iopv=2.00),
+                    FakeSource("q2", 2.101, iopv=2.001),
+                ),
+            )
+            result = service.collect(
+                observed_at=datetime(
+                    2026, 7, 30, 14, 0, tzinfo=ZoneInfo("Asia/Shanghai")
+                )
+            )
+            self.assertTrue(result.usable)
+            self.assertEqual(3, ledger.count("reference_series"))
+            self.assertTrue(
+                all(
+                    len(
+                        {
+                            item.source for item in snapshot.observations
+                            if item.kind.value == "VALUATION"
+                        }
+                    ) == 2
+                    for snapshot in result.snapshots
+                )
+            )
+
     def supplements(self) -> dict[str, dict[str, object]]:
         return {
             asset: {
@@ -165,3 +203,63 @@ class MarketCollectionTests(TestCase):
 
             with self.assertRaisesRegex(ValueError, r"SP500\.quote\.source"):
                 load_manual_supplement(path)
+
+    def test_write_manual_supplement_round_trip(self) -> None:
+        from trade_helper.market_collection import write_manual_supplement
+
+        observed_at = datetime(2026, 7, 30, 14, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
+        assets = {
+            "SP500": {
+                "quote": {
+                    "source": "BROKER_MANUAL",
+                    "last": 2.000, "bid": 1.999, "ask": 2.000,
+                },
+                "valuations": [
+                    {"source": "VALUATION_SOURCE_A", "value": 2.000},
+                    {"source": "VALUATION_SOURCE_B", "value": 2.001},
+                ],
+                "index": {"source": "INDEX_SOURCE", "value": 6500},
+                "fx": {"source": "FX_SOURCE", "value": 7.15},
+                "reference_value_cny": 100.0,
+            },
+            "NASDAQ": {
+                "valuations": [
+                    {"source": "VALUATION_SOURCE_A", "value": 2.0},
+                ],
+                "announcement": {
+                    "source": "FUND_ANNOUNCEMENT",
+                    "blocking": True,
+                    "detail": "客户端录入",
+                },
+            },
+            "DIVIDEND": {},
+        }
+        with TemporaryDirectory() as directory:
+            target = Path(directory) / "today-market.json"
+            written = write_manual_supplement(target, observed_at, assets)
+            self.assertEqual(written, target)
+            parsed_at, parsed_assets = load_manual_supplement(target)
+            self.assertEqual(parsed_at, observed_at)
+            self.assertEqual(parsed_assets["SP500"]["quote"]["source"], "BROKER_MANUAL")
+            self.assertEqual(
+                parsed_assets["SP500"]["valuations"][1]["value"], 2.001
+            )
+            self.assertTrue(
+                parsed_assets["NASDAQ"]["announcement"]["blocking"]
+            )
+            self.assertEqual(parsed_assets["DIVIDEND"], {})
+
+    def test_write_manual_supplement_rejects_invalid_payload(self) -> None:
+        from trade_helper.market_collection import write_manual_supplement
+
+        observed_at = datetime(2026, 7, 30, 14, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
+        assets = {
+            "SP500": {
+                "valuations": [{"value": 2.0}],
+            },
+        }
+        with TemporaryDirectory() as directory:
+            target = Path(directory) / "today-market.json"
+            with self.assertRaisesRegex(ValueError, r"source is required"):
+                write_manual_supplement(target, observed_at, assets)
+            self.assertFalse(target.exists())

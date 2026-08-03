@@ -19,6 +19,7 @@ from trade_helper.market_data import (
 from trade_helper.models import Quote, Readiness
 from trade_helper.providers.eastmoney import EastmoneyEtfProvider
 from trade_helper.providers.sina import SinaEtfProvider
+from trade_helper.providers.tencent import TencentEtfProvider
 from trade_helper.reference_series import ReferencePoint, ReferenceSeriesStore
 
 
@@ -45,7 +46,17 @@ class EastmoneySource:
         self.provider = EastmoneyEtfProvider()
 
     def fetch(self, symbols: tuple[str, ...]) -> tuple[Quote, ...]:
-        return tuple(self.provider.fetch(symbol) for symbol in symbols)
+        return tuple(self.provider.fetch_many(symbols))
+
+
+class TencentSource:
+    name = "tencent"
+
+    def __init__(self) -> None:
+        self.provider = TencentEtfProvider()
+
+    def fetch(self, symbols: tuple[str, ...]) -> tuple[Quote, ...]:
+        return tuple(self.provider.fetch_many(symbols))
 
 
 @dataclass(frozen=True)
@@ -95,6 +106,40 @@ def load_manual_supplement(
         _validate_supplement(asset_id, supplement)
     return observed_at, assets
 
+
+def write_manual_supplement(
+    path: str | Path,
+    observed_at: datetime,
+    assets: dict[str, dict[str, object]],
+) -> Path:
+    """Write a validated daily manual supplement file.
+
+    The payload is written to disk and then re-read through
+    ``load_manual_supplement`` so that only structurally valid supplements
+    are persisted; invalid content raises ValueError without leaving a
+    partial file behind.
+    """
+    payload = {
+        "observed_at": observed_at.isoformat(),
+        "assets": assets,
+    }
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temporary = target.with_name(f"{target.name}.tmp")
+    temporary.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    try:
+        parsed_at, parsed_assets = load_manual_supplement(temporary)
+    except Exception:
+        temporary.unlink(missing_ok=True)
+        raise
+    if parsed_at != observed_at or parsed_assets != assets:
+        temporary.unlink(missing_ok=True)
+        raise ValueError("manual supplement round-trip validation failed")
+    temporary.replace(target)
+    return target
 
 def _validate_supplement(asset_id: str, supplement: dict[str, object]) -> None:
     valuations = supplement.get("valuations", [])
@@ -160,14 +205,15 @@ class MarketCollectionService:
     ) -> None:
         self.ledger = ledger
         self.config = config
-        self.sources = sources or (SinaSource(), EastmoneySource())
+        self.sources = sources or (SinaSource(), EastmoneySource(), TencentSource())
 
     def collect(
         self,
         *,
         observed_at: datetime,
-        supplements: dict[str, dict[str, object]],
+        supplements: dict[str, dict[str, object]] | None = None,
     ) -> CollectionResult:
+        supplements = supplements or {}
         symbols = tuple(asset.etf_code for asset in self.config.assets)
         quotes: list[Quote] = []
         errors: list[str] = []
@@ -181,8 +227,20 @@ class MarketCollectionService:
         snapshots = []
         for asset in self.config.assets:
             supplement = supplements.get(asset.asset_id, {})
-            observations = self._observations(observed_at, supplement)
             asset_quotes = list(quotes)
+            observations = list(self._observations(observed_at, supplement))
+            observations.extend(
+                Observation(
+                    ObservationKind.VALUATION,
+                    f"{quote.source}:iopv",
+                    quote.observed_at,
+                    Decimal(str(quote.iopv)),
+                )
+                for quote in asset_quotes
+                if quote.symbol == asset.etf_code
+                and quote.iopv is not None
+                and quote.iopv > 0
+            )
             manual_quote = supplement.get("quote")
             if manual_quote is not None:
                 asset_quotes.append(
@@ -205,7 +263,7 @@ class MarketCollectionService:
                 symbol=asset.etf_code,
                 now=observed_at,
                 quotes=tuple(asset_quotes),
-                observations=observations,
+                observations=tuple(observations),
                 maximum_premium_difference=Decimal(
                     str(
                         self.config.raw["data_quality"][
@@ -222,6 +280,14 @@ class MarketCollectionService:
             market_store.save(snapshot)
             snapshots.append(snapshot)
             reference_value = supplement.get("reference_value_cny")
+            if reference_value is None:
+                automatic_values = [
+                    item.value
+                    for item in observations
+                    if item.kind == ObservationKind.VALUATION
+                    and item.value is not None
+                ]
+                reference_value = min(automatic_values, default=None)
             if reference_value is not None:
                 reference_store.add(
                     ReferencePoint(

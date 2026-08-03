@@ -24,6 +24,7 @@ from trade_helper.market_collection import (
     MarketCollectionService,
     QuoteSource,
     load_manual_supplement,
+    write_manual_supplement,
 )
 from trade_helper.trading_calendar import (
     TradingCalendarStore,
@@ -217,14 +218,27 @@ class DesktopController:
         )
         return snapshot_id
 
+    def save_today_supplement(
+        self,
+        path: str | Path,
+        observed_at: datetime,
+        assets: dict[str, dict[str, object]],
+    ) -> Path:
+        """Persist and validate today's manual market supplement file."""
+        return write_manual_supplement(path, observed_at, assets)
+
     def collect_market(
         self,
-        supplement: str | Path,
+        supplement: str | Path | None,
         config: str | Path,
         *,
         sources: tuple[QuoteSource, ...] | None = None,
     ) -> MarketCollectionSummary:
-        observed_at, supplements = load_manual_supplement(supplement)
+        if supplement is None:
+            observed_at = datetime.now().astimezone()
+            supplements = {}
+        else:
+            observed_at, supplements = load_manual_supplement(supplement)
         ledger = Ledger(self.database)
         ledger.initialize()
         result: CollectionResult = MarketCollectionService(

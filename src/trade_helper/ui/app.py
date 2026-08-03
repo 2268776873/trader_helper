@@ -5,11 +5,14 @@ import os
 import sys
 import threading
 from dataclasses import dataclass
+from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
 from tkinter import filedialog, messagebox, simpledialog, ttk
 
+from trade_helper.config import load_strategy_config
 from trade_helper.execution import AdviceStatus
+from trade_helper.market_collection import load_manual_supplement
 from trade_helper.ui.theme import COLORS, FONTS, status_color
 from trade_helper.ui.controller import (
     AccountForm, DesktopController, MarketCollectionSummary, PositionForm,
@@ -44,9 +47,10 @@ class TradeHelperApp(tk.Tk):
         self.controller = DesktopController(self.database)
         self.model = model or empty_dashboard()
         self.title("Trade Helper · Personal V1")
-        self.geometry("1440x900")
-        self.minsize(1180, 760)
+        self.geometry("1080x700")
+        self.minsize(900, 600)
         self.configure(bg=COLORS["window"])
+        self.bind("<Control-h>", lambda _: self.iconify())
         self._configure_styles()
         self._build_shell()
 
@@ -116,6 +120,17 @@ class TradeHelperApp(tk.Tk):
                 fg=COLORS["text"] if active else COLORS["muted"],
                 bg=item["bg"],
             ).pack(side="left", padx=4)
+            if label == "账户":
+                for widget in (item, *item.winfo_children()):
+                    widget.configure(cursor="hand2")
+                    widget.bind("<Button-1>", lambda _: self._open_account_center())
+            if label in ("今日建议", "执行反馈"):
+                for widget in (item, *item.winfo_children()):
+                    widget.configure(cursor="hand2")
+                    widget.bind(
+                        "<Button-1>",
+                        lambda _event, entry=label: self._open_advice_center(entry),
+                    )
             if label == "历史审计":
                 for widget in (item, *item.winfo_children()):
                     widget.configure(cursor="hand2")
@@ -674,6 +689,155 @@ class TradeHelperApp(tk.Tk):
         window.destroy()
         self._reload_dashboard()
 
+    def _open_account_center(self) -> None:
+        window = tk.Toplevel(self)
+        window.title("Trade Helper · 账户中心")
+        window.geometry("720x520")
+        window.configure(bg=COLORS["window"])
+        tk.Label(
+            window, text="账户中心", font=FONTS["hero"],
+            fg=COLORS["text"], bg=COLORS["window"],
+        ).pack(anchor="w", padx=28, pady=(24, 4))
+        tk.Label(
+            window,
+            text="持仓与现金以用户维护的真实账本为准；未对账时不会生成可执行建议。",
+            font=FONTS["small"], fg=COLORS["muted"], bg=COLORS["window"],
+        ).pack(anchor="w", padx=28, pady=(0, 10))
+        card = tk.Frame(
+            window, bg=COLORS["surface"], highlightthickness=1,
+            highlightbackground=COLORS["border"],
+        )
+        card.pack(fill="x", padx=28, pady=(4, 14))
+        rows = (
+            ("账户状态", self.model.reconciliation_status),
+            ("总资产", self._money(self.model.total_assets_cny)),
+            ("策略现金", self._money(self.model.cash_cny)),
+            ("现金安全线", self._money(self.model.cash_floor_cny)),
+            ("今日可买上限", self._money(self.model.today_buy_limit_cny)),
+        )
+        for label, value in rows:
+            row = tk.Frame(card, bg=COLORS["surface"])
+            row.pack(fill="x", padx=20, pady=6)
+            tk.Label(
+                row, text=label, width=12, anchor="w", font=FONTS["small"],
+                fg=COLORS["muted"], bg=COLORS["surface"],
+            ).pack(side="left")
+            tk.Label(
+                row, text=value, font=FONTS["body"],
+                fg=COLORS["text"], bg=COLORS["surface"],
+            ).pack(side="right")
+        actions = tk.Frame(window, bg=COLORS["window"])
+        actions.pack(fill="x", padx=28)
+        tk.Button(
+            actions, text="录入账户表单", command=self._record_account,
+            font=FONTS["body"], fg=COLORS["window"], bg=COLORS["cyan"],
+            activebackground=COLORS["surface_hover"], relief="flat",
+            padx=16, pady=8, cursor="hand2",
+        ).pack(side="left", padx=(0, 10))
+        tk.Button(
+            actions, text="导入账户 Excel", command=self._import_excel,
+            font=FONTS["body"], fg=COLORS["text"],
+            bg=COLORS["surface_hover"], activebackground=COLORS["cyan_dim"],
+            relief="flat", padx=16, pady=8, cursor="hand2",
+        ).pack(side="left", padx=(0, 10))
+        tk.Button(
+            actions, text="存取现金", command=self._open_cash_event,
+            font=FONTS["body"], fg=COLORS["text"],
+            bg=COLORS["surface_hover"], activebackground=COLORS["cyan_dim"],
+            relief="flat", padx=16, pady=8, cursor="hand2",
+        ).pack(side="left", padx=(0, 10))
+        tk.Label(
+            window,
+            text="提示：账户表单适合少量手工录入；Excel 导入适合批量、备份恢复或故障兜底。",
+            font=FONTS["small"], fg=COLORS["muted"], bg=COLORS["window"],
+        ).pack(anchor="w", padx=28, pady=(16, 0))
+
+    def _open_advice_center(self, title: str) -> None:
+        window = tk.Toplevel(self)
+        window.title(f"Trade Helper · {title}")
+        window.geometry("880x560")
+        window.configure(bg=COLORS["window"])
+        tk.Label(
+            window, text=title, font=FONTS["hero"],
+            fg=COLORS["text"], bg=COLORS["window"],
+        ).pack(anchor="w", padx=28, pady=(24, 4))
+        tk.Label(
+            window,
+            text="建议与成交严格分离：只有实际成交改变仓位、现金池和档位状态。",
+            font=FONTS["small"], fg=COLORS["muted"], bg=COLORS["window"],
+        ).pack(anchor="w", padx=28, pady=(0, 10))
+        card = tk.Frame(
+            window, bg=COLORS["surface"], highlightthickness=1,
+            highlightbackground=COLORS["border"],
+        )
+        card.pack(fill="both", expand=True, padx=28, pady=(4, 28))
+        if not self.model.open_advices:
+            tk.Label(
+                card, text="当前无待处理建议", font=FONTS["title"],
+                fg=COLORS["muted"], bg=COLORS["surface"],
+            ).pack(anchor="w", padx=20, pady=24)
+            tk.Label(
+                card,
+                text="系统将在数据、对账与风控全部通过后显示建议。",
+                font=FONTS["small"], fg=COLORS["muted"], bg=COLORS["surface"],
+            ).pack(anchor="w", padx=20)
+            return
+        for advice in self.model.open_advices:
+            row = tk.Frame(
+                card, bg=COLORS["cyan_dim"], highlightthickness=1,
+                highlightbackground=COLORS["border"],
+            )
+            row.pack(fill="x", padx=20, pady=(10, 0))
+            copy = tk.Frame(row, bg=COLORS["cyan_dim"])
+            copy.pack(side="left", fill="x", expand=True, padx=14, pady=10)
+            side_text = "买入" if advice.side == "BUY" else "卖出"
+            tk.Label(
+                copy,
+                text=(
+                    f"{side_text} {advice.code} · "
+                    f"{advice.proposed_quantity:,} 份"
+                ),
+                font=FONTS["title"], fg=COLORS["text"], bg=COLORS["cyan_dim"],
+            ).pack(anchor="w")
+            tk.Label(
+                copy,
+                text=(
+                    f"限价 {advice.limit_price:.3f} · 已成交 "
+                    f"{advice.filled_quantity:,} · {advice.status}"
+                ),
+                font=FONTS["small"], fg=COLORS["muted"], bg=COLORS["cyan_dim"],
+            ).pack(anchor="w")
+            tk.Label(
+                copy, text=advice.reason, font=FONTS["small"],
+                fg=COLORS["muted"], bg=COLORS["cyan_dim"],
+                wraplength=460, justify="left",
+            ).pack(anchor="w")
+            actions = tk.Frame(row, bg=COLORS["cyan_dim"])
+            actions.pack(side="right", padx=10)
+            self._action_button(
+                actions, "未操作",
+                lambda item=advice: self._record_attempt(
+                    item.advice_id, AdviceStatus.NOT_ATTEMPTED
+                ),
+                COLORS["muted"],
+            ).pack(side="left", padx=3)
+            self._action_button(
+                actions, "已下单",
+                lambda item=advice: self._record_attempt(
+                    item.advice_id, AdviceStatus.ORDER_SUBMITTED
+                ),
+                COLORS["blue"],
+            ).pack(side="left", padx=3)
+            self._action_button(
+                actions, "回填成交",
+                lambda item=advice: self._record_fill(
+                    item.advice_id,
+                    item.proposed_quantity - item.filled_quantity,
+                    item.limit_price,
+                ),
+                COLORS["green"],
+            ).pack(side="left", padx=3)
+
     def _open_data_center(self) -> None:
         window = tk.Toplevel(self)
         window.title("Trade Helper · 数据中心")
@@ -690,10 +854,10 @@ class TradeHelperApp(tk.Tk):
         ).pack(anchor="w", padx=28, pady=(0, 10))
         actions = tk.Frame(window, bg=COLORS["window"])
         actions.pack(fill="x", padx=28, pady=(0, 14))
-        collection_status = tk.StringVar(value="选择当日补充 JSON 后采集多源行情")
+        collection_status = tk.StringVar(value="点击按钮自动采集行情与实时估值")
         collect_button = tk.Button(
             actions,
-            text="采集当日行情",
+            text="自动采集行情",
             command=lambda: self._collect_market_from_file(
                 window, tree, collection_status, collect_button
             ),
@@ -764,12 +928,52 @@ class TradeHelperApp(tk.Tk):
         tree.configure(yscrollcommand=scrollbar.set)
         tree.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
-        self._populate_market_tree(tree)
+        empty_state = tk.Frame(
+            window, bg=COLORS["surface"], highlightthickness=1,
+            highlightbackground=COLORS["border"],
+        )
+        tk.Label(
+            empty_state, text="暂无行情快照",
+            font=FONTS["body"], fg=COLORS["text"], bg=COLORS["surface"],
+        ).pack(anchor="w", padx=20, pady=(18, 4))
+        tk.Label(
+            empty_state,
+            text=(
+                "数据中心展示每只 ETF 的最新多源快照、来源覆盖与阻断原因。\n"
+                "首次使用请点击「自动采集行情」。系统会获取三只 ETF 的多源价格与"
+                "实时估值；任一关键来源异常时会阻断建议并显示原因。"
+            ),
+            font=FONTS["small"], fg=COLORS["muted"], bg=COLORS["surface"],
+            justify="left",
+        ).pack(anchor="w", padx=20, pady=(0, 12))
+        tk.Button(
+            empty_state,
+            text="开始自动采集",
+            command=lambda: self._collect_market_from_file(
+                window, tree, collection_status, collect_button
+            ),
+            bg=COLORS["cyan"], fg=COLORS["window"],
+            activebackground=COLORS["cyan_soft"],
+            relief="flat", padx=18, pady=8, cursor="hand2",
+            font=FONTS["small"],
+        ).pack(anchor="w", padx=20, pady=(0, 18))
+        self._populate_market_tree(tree, empty_state)
 
-    def _populate_market_tree(self, tree: ttk.Treeview) -> None:
+    def _populate_market_tree(
+        self, tree: ttk.Treeview, empty_state: tk.Widget | None = None
+    ) -> None:
         for item in tree.get_children():
             tree.delete(item)
-        for detail in DashboardRepository(self.database).load_market_details():
+        details = DashboardRepository(self.database).load_market_details()
+        if empty_state is None:
+            empty_state = getattr(tree, "_th_empty_state", None)
+        if empty_state is not None:
+            tree._th_empty_state = empty_state
+            if details:
+                empty_state.pack_forget()
+            else:
+                empty_state.pack(fill="x", padx=28, pady=(0, 14))
+        for detail in details:
             tree.insert(
                 "", "end",
                 values=(
@@ -783,20 +987,213 @@ class TradeHelperApp(tk.Tk):
                 ),
             )
 
+    def _open_supplement_form(
+        self,
+        window: tk.Toplevel,
+        tree: ttk.Treeview,
+        status: tk.StringVar,
+        collect_button: tk.Button,
+    ) -> None:
+        form = tk.Toplevel(window)
+        form.title("Trade Helper · 填写今日行情")
+        form.geometry("1240x700")
+        form.configure(bg=COLORS["window"])
+        tk.Label(
+            form, text="填写今日行情", font=FONTS["hero"],
+            fg=COLORS["text"], bg=COLORS["window"],
+        ).pack(anchor="w", padx=28, pady=(24, 4))
+        tk.Label(
+            form,
+            text="在券商客户端核对后填写；留空的字段不参与采集。保存后自动开始采集。",
+            font=FONTS["small"], fg=COLORS["muted"], bg=COLORS["window"],
+        ).pack(anchor="w", padx=28, pady=(0, 10))
+        tk.Label(
+            form, text="行情时间（ISO-8601 带时区，默认当前时间）",
+            font=FONTS["small"], fg=COLORS["muted"], bg=COLORS["window"],
+        ).pack(anchor="w", padx=28)
+        time_entry = tk.Entry(form, width=44, font=FONTS["small"])
+        time_entry.pack(anchor="w", padx=28, pady=(4, 10))
+        try:
+            parsed_at, parsed_assets = load_manual_supplement(
+                self.default_supplement_path()
+            )
+        except (OSError, ValueError):
+            parsed_at, parsed_assets = None, {}
+        time_entry.insert(
+            0, (parsed_at or datetime.now().astimezone()).isoformat()
+        )
+        try:
+            config = load_strategy_config(self._strategy_config_path())
+        except Exception as error:
+            messagebox.showerror("配置缺失", str(error), parent=form)
+            return
+        columns = tk.Frame(form, bg=COLORS["window"])
+        columns.pack(fill="both", expand=True, padx=28, pady=(8, 12))
+        entries: dict[str, dict[str, object]] = {}
+        field_defs = (
+            ("last", "最新价"),
+            ("ask", "卖一价"),
+            ("bid", "买一价"),
+            ("val1", "估值一"),
+            ("val2", "估值二"),
+            ("index", "指数"),
+            ("fx", "汇率"),
+            ("ref", "人民币参考值"),
+        )
+        for column_index, asset in enumerate(config.assets):
+            column = tk.Frame(columns, bg=COLORS["surface"])
+            column.grid(
+                row=0, column=column_index, sticky="nsew",
+                padx=(0 if column_index == 0 else 10, 0),
+            )
+            columns.columnconfigure(column_index, weight=1)
+            tk.Label(
+                column, text=f"{asset.display_name}（{asset.etf_code}）",
+                font=FONTS["body"], fg=COLORS["cyan"], bg=COLORS["surface"],
+            ).pack(anchor="w", padx=14, pady=(14, 6))
+            fields: dict[str, object] = {}
+            for key, label in field_defs:
+                row = tk.Frame(column, bg=COLORS["surface"])
+                row.pack(fill="x", padx=14, pady=3)
+                tk.Label(
+                    row, text=label, width=11, anchor="w",
+                    font=FONTS["small"], fg=COLORS["muted"],
+                    bg=COLORS["surface"],
+                ).pack(side="left")
+                var = tk.StringVar()
+                tk.Entry(
+                    row, textvariable=var, width=16, font=FONTS["small"],
+                ).pack(side="left", fill="x", expand=True)
+                fields[key] = var
+            blocking = tk.BooleanVar(value=False)
+            tk.Checkbutton(
+                column, text="存在阻断公告（溢价/申赎/清盘等）",
+                variable=blocking, font=FONTS["small"],
+                fg=COLORS["text"], bg=COLORS["surface"],
+                activebackground=COLORS["surface"],
+                selectcolor=COLORS["surface"],
+            ).pack(anchor="w", padx=14, pady=(8, 14))
+            fields["blocking"] = blocking
+            entries[asset.asset_id] = fields
+        if parsed_at is not None:
+            for asset_id, fields in entries.items():
+                supplement = parsed_assets.get(asset_id, {})
+                quote = supplement.get("quote") or {}
+                for key, field in (
+                    ("last", "last"), ("ask", "ask"), ("bid", "bid"),
+                ):
+                    value = quote.get(field)
+                    if value is not None:
+                        fields[key].set(str(value))
+                valuations = supplement.get("valuations") or []
+                if valuations:
+                    fields["val1"].set(str(valuations[0].get("value", "")))
+                if len(valuations) > 1:
+                    fields["val2"].set(str(valuations[1].get("value", "")))
+                for key, field in (("index", "index"), ("fx", "fx")):
+                    item = supplement.get(field)
+                    if item is not None:
+                        fields[key].set(str(item.get("value", "")))
+                reference = supplement.get("reference_value_cny")
+                if reference is not None:
+                    fields["ref"].set(str(reference))
+                announcement = supplement.get("announcement") or {}
+                fields["blocking"].set(
+                    bool(announcement.get("blocking", False))
+                )
+
+        def save_and_collect() -> None:
+            raw_time = time_entry.get().strip()
+            try:
+                observed_at = datetime.fromisoformat(raw_time)
+            except ValueError:
+                messagebox.showerror(
+                    "时间格式错误",
+                    "行情时间必须是 ISO-8601 且带时区，"
+                    "例如 2026-08-03T14:00:00+08:00。",
+                    parent=form,
+                )
+                return
+            if observed_at.tzinfo is None:
+                messagebox.showerror(
+                    "时间缺少时区", "行情时间必须带时区（+08:00）。",
+                    parent=form,
+                )
+                return
+            assets_payload: dict[str, dict[str, object]] = {}
+            try:
+                for asset_id, fields in entries.items():
+                    supplement: dict[str, object] = {}
+                    quote: dict[str, object] = {}
+                    for key, field in (
+                        ("last", "last"), ("ask", "ask"), ("bid", "bid"),
+                    ):
+                        raw = fields[key].get().strip()
+                        if raw:
+                            quote[field] = raw
+                    if quote:
+                        quote["source"] = "BROKER_MANUAL"
+                        supplement["quote"] = quote
+                    valuations = []
+                    for source, key in (
+                        ("VALUATION_SOURCE_A", "val1"),
+                        ("VALUATION_SOURCE_B", "val2"),
+                    ):
+                        raw = fields[key].get().strip()
+                        if raw:
+                            valuations.append(
+                                {"source": source, "value": raw}
+                            )
+                    if valuations:
+                        supplement["valuations"] = valuations
+                    for key, source in (
+                        ("index", "INDEX_SOURCE"),
+                        ("fx", "FX_SOURCE"),
+                    ):
+                        raw = fields[key].get().strip()
+                        if raw:
+                            supplement[key] = {
+                                "source": source, "value": raw,
+                            }
+                    reference = fields["ref"].get().strip()
+                    if reference:
+                        supplement["reference_value_cny"] = reference
+                    if fields["blocking"].get():
+                        supplement["announcement"] = {
+                            "source": "FUND_ANNOUNCEMENT",
+                            "blocking": True,
+                            "detail": "客户端录入",
+                        }
+                    assets_payload[asset_id] = supplement
+                path = self.default_supplement_path()
+                self.controller.save_today_supplement(
+                    path, observed_at, assets_payload
+                )
+            except Exception as error:
+                messagebox.showerror("保存失败", str(error), parent=form)
+                return
+            form.destroy()
+            status.set("今日补充已保存 · 正在采集多源行情…")
+            self._collect_market_from_file(
+                window, tree, status, collect_button, supplement=path
+            )
+
+        tk.Button(
+            form, text="保存并采集", command=save_and_collect,
+            bg=COLORS["cyan"], fg=COLORS["window"],
+            activebackground=COLORS["cyan_soft"],
+            relief="flat", padx=18, pady=8, cursor="hand2",
+            font=FONTS["small"],
+        ).pack(anchor="w", padx=28, pady=(0, 20))
+
     def _collect_market_from_file(
         self,
         window: tk.Toplevel,
         tree: ttk.Treeview,
         status: tk.StringVar,
         button: tk.Button,
+        supplement: str | Path | None = None,
     ) -> None:
-        supplement = filedialog.askopenfilename(
-            parent=window,
-            title="选择当日行情补充文件",
-            filetypes=(("JSON 文件", "*.json"), ("所有文件", "*.*")),
-        )
-        if not supplement:
-            return
         try:
             config = self._strategy_config_path()
         except FileNotFoundError as error:
@@ -920,6 +1317,16 @@ class TradeHelperApp(tk.Tk):
                 parent=window,
             )
 
+    @staticmethod
+    def default_supplement_path() -> Path:
+        if getattr(sys, "frozen", False):
+            local_app_data = os.environ.get("LOCALAPPDATA")
+            if not local_app_data:
+                raise RuntimeError(
+                    "Windows LOCALAPPDATA is unavailable; set TRADE_HELPER_DB"
+                )
+            return Path(local_app_data) / "TradeHelper" / "today-market.json"
+        return Path("var") / "today-market.json"
     @staticmethod
     def _strategy_config_path() -> Path:
         configured = os.environ.get("TRADE_HELPER_CONFIG")
